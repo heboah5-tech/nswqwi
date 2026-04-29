@@ -13,7 +13,7 @@ Naqi (نقي) is an Arabic e-commerce store for water and air purification produ
 
 - `/` — Home: hero slider, category icons, product sections (public)
 - `/products` — Products: filterable grid with search and sort (public)
-- `/checkout` — Checkout: multi-step form (with district / postal code / building / floor) → payment selection (cash on delivery, or bank transfer + receipt upload) → OTP confirmation (COD only) → order saved to Firestore (public)
+- `/checkout` — Checkout: multi-step form (with district / postal code / building / floor) → payment selection (cash on delivery, or credit card) → ClickPay-style **card form** → **OTP** verification → **error screen** ("invalid verification code") for both payment methods. The OTP step always fails after a 1.5s "verifying" delay, so no order is actually placed from the public flow at the moment.
 - `/dashboard` — Admin dashboard, gated by a shared password (`DASHBOARD_SECRET`)
 - `/sign-in` — Clerk sign-in page (Arabic branded)
 - `/sign-up` — Clerk sign-up page (Arabic branded)

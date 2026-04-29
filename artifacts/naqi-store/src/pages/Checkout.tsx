@@ -35,7 +35,7 @@ function OtpStep({ phone, amount, onSuccess, onCancel }: { phone: string; amount
       setVerifying(false);
       setError("رمز التحقق غير صحيح. يرجى المحاولة مرة أخرى");
       setOtp("");
-    }, 5000);
+    }, 1500);
   };
 
   return (
