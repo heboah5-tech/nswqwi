@@ -1,0 +1,41 @@
+{
+  "name": "Order",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string"
+    },
+    "phone": {
+      "type": "string"
+    },
+    "city": {
+      "type": "string"
+    },
+    "address": {
+      "type": "string"
+    },
+    "notes": {
+      "type": "string"
+    },
+    "payment": {
+      "type": "string"
+    },
+    "total": {
+      "type": "number"
+    },
+    "items": {
+      "type": "array"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "confirmed",
+        "delivered",
+        "cancelled"
+      ],
+      "default": "pending"
+    }
+  },
+  "required": []
+}

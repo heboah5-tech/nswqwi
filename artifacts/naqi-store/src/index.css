@@ -1,0 +1,84 @@
+@import url('https://fonts.googleapis.com/css2?family=Almarai:wght@300;400;700;800&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --accent: 123 73.4% 36.9%;
+    --accent-foreground: 222.2 84% 4.9%;
+    --background: 0 0% 97.3%;
+    --border: 0 0% 86.7%;
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 84% 4.9%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+    --foreground: 0 0% 0%;
+    --input: 214.3 31.8% 91.4%;
+    --muted: 0 0% 93.7%;
+    --muted-foreground: 222.2 47% 25%;
+    --popover: 0 0% 97.3%;
+    --popover-foreground: 222.2 84% 4.9%;
+    --primary: 199.4 76.9% 33.9%;
+    --primary-foreground: 0 0% 100%;
+    --radius: 0rem;
+    --ring: 123 73.4% 36.9%;
+    --secondary: 216.5 85.2% 94.7%;
+    --secondary-foreground: 222.2 84% 4.9%;
+    --font-body: 'Almarai', system-ui, sans-serif;
+    --font-heading: 'Almarai', system-ui, sans-serif;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: var(--font-body) !important;
+    direction: rtl;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-heading) !important;
+  }
+}
+
+@keyframes floatA {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  50% { transform: translateY(-20px) rotate(3deg); }
+}
+
+@keyframes floatB {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  50% { transform: translateY(-15px) rotate(-2deg); }
+}
+
+@keyframes gradient-x {
+  0%, 100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+}
+
+.animate-float-a { animation: floatA 8s ease-in-out infinite; }
+.animate-float-b { animation: floatB 6s ease-in-out 2s infinite; }
+.animate-gradient-x {
+  animation: gradient-x 6s ease infinite;
+  background-size: 200% auto;
+}
+
+@keyframes pulse-slow {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.9; transform: scale(1.02); }
+}
+.animate-pulse-slow { animation: pulse-slow 3s infinite ease-in-out; }
+
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: hsl(var(--muted)); }
+::-webkit-scrollbar-thumb { background: hsl(var(--primary) / 0.5); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: hsl(var(--primary)); }
+
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }

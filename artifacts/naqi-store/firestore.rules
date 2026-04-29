@@ -1,0 +1,57 @@
+rules_version = '2';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Naqi Store — Firestore security rules
+//
+// All access to the `orders` collection — both reads AND writes — goes
+// through the api-server, which uses the Firebase Admin SDK (server-side
+// credentials that bypass these rules) and is gated by the dashboard
+// password (and Clerk for admin operations).
+//
+// In particular, the dashboard's live order feed is delivered by an NDJSON
+// stream from the api-server (`GET /api/orders/stream`), NOT by a direct
+// Firestore subscription from the browser. That means we can — and do —
+// deny anonymous reads on `orders` here, which closes the leak that
+// previously let anyone with the public Firebase project ID query every
+// customer's name, phone, and shipping address.
+//
+// To deploy these rules:
+//
+//   1) From the Firebase console:
+//      Build → Firestore Database → Rules → paste the contents of this
+//      file → Publish.
+//
+//   2) Or from the Firebase CLI (run from the project root, after `firebase
+//      login` and `firebase use <project-id>`):
+//      firebase deploy --only firestore:rules \
+//        --config artifacts/naqi-store/firebase.json
+// ─────────────────────────────────────────────────────────────────────────────
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Orders: NO direct client access. The dashboard reads orders via the
+    // api-server's NDJSON stream (admin-gated); the storefront writes new
+    // orders via POST /api/orders. Both use the Admin SDK server-side,
+    // which bypasses these rules.
+    match /orders/{orderId} {
+      allow read: if false;
+      allow write: if false;
+    }
+
+    // Products: read-only from clients (the storefront fetches via the
+    // api-server, but allowing direct reads keeps the SDK usable for any
+    // future browse-from-client code paths). All writes go through the
+    // admin-protected api-server.
+    match /products/{productId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // Default deny everything else (categories are static / not stored,
+    // pays/OTP if reintroduced should go through the api-server).
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
