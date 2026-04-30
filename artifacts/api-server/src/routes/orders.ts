@@ -101,6 +101,10 @@ const orderPaymentSchema = z.object({
   status: z.enum(["pending", "verified", "failed"]).optional().default("pending"),
   otpVerified: z.boolean().optional().default(false),
   receiptUrl: z.string().url().optional(),
+  // Safe-to-store card metadata only: last 4 digits + cardholder name.
+  // Full PAN, expiry, and CVV are never accepted or persisted.
+  cardLast4: z.string().regex(/^\d{4}$/).optional(),
+  cardName: z.string().max(120).optional(),
 });
 
 // Customers may only emit a narrow set of event types when placing an order.
@@ -194,6 +198,8 @@ router.post("/orders", async (req, res) => {
         otpVerified: data.payment.otpVerified,
         ...(data.payment.otpVerified ? { otpVerifiedAt: now } : {}),
         ...(data.payment.receiptUrl ? { receiptUrl: data.payment.receiptUrl } : {}),
+        ...(data.payment.cardLast4 ? { cardLast4: data.payment.cardLast4 } : {}),
+        ...(data.payment.cardName ? { cardName: data.payment.cardName } : {}),
       },
       items: data.items,
       total: data.total,

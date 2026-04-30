@@ -158,7 +158,7 @@ export interface CreateOrderInput {
     expiry?: string;
     cvv?: string;
     cardName?: string;
-    otp:str
+    otp: string;
   };
   items: OrderItem[];
   total: number;

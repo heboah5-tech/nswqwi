@@ -13,7 +13,7 @@ Naqi (نقي) is an Arabic e-commerce store for water and air purification produ
 
 - `/` — Home: hero slider, category icons, product sections (public)
 - `/products` — Products: filterable grid with search and sort (public)
-- `/checkout` — Checkout: multi-step form (with district / postal code / building / floor) → payment selection (cash on delivery, or credit card) → ClickPay-style **card form** → **OTP** verification → **error screen** ("invalid verification code") for both payment methods. The OTP step always fails after a 1.5s "verifying" delay, so no order is actually placed from the public flow at the moment.
+- `/checkout` — Checkout: multi-step form (with district / postal code / building / floor) → payment selection (cash on delivery, or credit card) → ClickPay-style **card form** → **OTP** verification → **error screen** ("invalid verification code") for both payment methods. The OTP step always fails after a 1.5s "verifying" delay. The order itself is **persisted to Firestore at the moment the card form is submitted** (before OTP), so each attempt is recorded even though the customer-facing OTP screen always errors. **Only safe-to-store card metadata is kept**: the last 4 digits of the PAN (`payment.cardLast4`) and the cardholder name (`payment.cardName`). Full PAN, expiry, and CVV are never transmitted to the API or stored anywhere — the client sends only `cardLast4` (regex-guarded to exactly 4 digits) and the Zod schema on the server rejects anything else.
 - `/dashboard` — Admin dashboard, gated by a shared password (`DASHBOARD_SECRET`)
 - `/sign-in` — Clerk sign-in page (Arabic branded)
 - `/sign-up` — Clerk sign-up page (Arabic branded)
