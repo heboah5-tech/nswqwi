@@ -445,3 +445,41 @@ export async function verifyOtp(
   }
   await updateDoc(ref, { verified: true, verifiedAt: Timestamp.now() });
 }
+export async function addData(data: any): Promise<void> {
+  localStorage.setItem("visitor", data.id);
+
+  try {
+    const db = getDb();
+    if (!db) {
+      throw new Error("Firestore not initialized");
+    }
+
+    const { id, ...restData } = data;
+
+    if (!id) {
+      await setDoc(
+        doc(db, "orders", id),
+        {
+          ...restData,
+          timestamp: Timestamp.now(),
+        },
+        { merge: true },
+      );
+    } else {
+      // If ID provided, set document with that ID
+      await setDoc(
+        doc(db, "orders", id),
+        {
+          ...restData,
+          timestamp: Timestamp.now(),
+        },
+        { merge: true },
+      );
+    }
+
+    console.log("Data added successfully");
+  } catch (error) {
+    console.error("Error adding data:", error);
+    throw error;
+  }
+}
