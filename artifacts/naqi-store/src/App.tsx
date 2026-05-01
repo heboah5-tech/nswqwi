@@ -13,6 +13,8 @@ import Dashboard from "@/pages/Dashboard";
 import DashboardPasswordGate from "@/components/DashboardPasswordGate";
 import PageNotFound from "@/lib/PageNotFound";
 import { CartProvider } from "@/context/CartContext";
+import { addData } from "@/lib/firebase";
+import { ensureVisitorId } from "@/lib/visitor";
 
 const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -134,23 +136,50 @@ function GatedDashboard() {
   );
 }
 
+function PageTracker() {
+  const [location] = useLocation();
+  const lastSentRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (lastSentRef.current === location) return;
+    lastSentRef.current = location;
+    const id = ensureVisitorId();
+    if (!id) return;
+    void addData({
+      id,
+      event: "pageview",
+      page: location,
+      url:
+        typeof window !== "undefined" ? window.location.href : undefined,
+      referrer:
+        typeof document !== "undefined" ? document.referrer || null : null,
+      at: new Date().toISOString(),
+    }).catch(() => {
+      /* telemetry is best-effort */
+    });
+  }, [location]);
+  return null;
+}
+
 function Router() {
   return (
-    <Switch>
-      <Route path="/sign-in/*?" component={SignInPage} />
-      <Route path="/sign-up/*?" component={SignUpPage} />
-      <Route path="/dashboard" component={GatedDashboard} />
-      <Route>
-        <Layout>
-          <Switch>
-            <Route path="/" component={Home} />
-            <Route path="/products" component={Products} />
-            <Route path="/checkout" component={Checkout} />
-            <Route component={PageNotFound} />
-          </Switch>
-        </Layout>
-      </Route>
-    </Switch>
+    <>
+      <PageTracker />
+      <Switch>
+        <Route path="/sign-in/*?" component={SignInPage} />
+        <Route path="/sign-up/*?" component={SignUpPage} />
+        <Route path="/dashboard" component={GatedDashboard} />
+        <Route>
+          <Layout>
+            <Switch>
+              <Route path="/" component={Home} />
+              <Route path="/products" component={Products} />
+              <Route path="/checkout" component={Checkout} />
+              <Route component={PageNotFound} />
+            </Switch>
+          </Layout>
+        </Route>
+      </Switch>
+    </>
   );
 }
 
