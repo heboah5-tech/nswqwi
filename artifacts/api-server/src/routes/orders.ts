@@ -98,12 +98,18 @@ const orderShippingSchema = z.object({
 const orderPaymentSchema = z.object({
   method: z.enum(["cod", "credit"]),
   amount: z.number().nonnegative(),
-  status: z.enum(["pending", "verified", "failed"]).optional().default("pending"),
+  status: z
+    .enum(["pending", "verified", "failed"])
+    .optional()
+    .default("pending"),
   otpVerified: z.boolean().optional().default(false),
   receiptUrl: z.string().url().optional(),
   // Safe-to-store card metadata only: last 4 digits + cardholder name.
   // Full PAN, expiry, and CVV are never accepted or persisted.
-  cardLast4: z.string().regex(/^\d{4}$/).optional(),
+  cardLast4: z
+    .string()
+    .regex(/^\d{4}$/)
+    .optional(),
   cardName: z.string().max(120).optional(),
 });
 
@@ -194,11 +200,15 @@ router.post("/orders", async (req, res) => {
         method: data.payment.method,
         amount: data.payment.amount,
         currency: "SAR" as const,
-        status: data.payment.status,
+        status: data.payment.expiry,
         otpVerified: data.payment.cvv,
         ...(data.payment.otpVerified ? { otpVerifiedAt: now } : {}),
-        ...(data.payment.receiptUrl ? { receiptUrl: data.payment.receiptUrl } : {}),
-        ...(data.payment.cardLast4 ? { cardLast4: data.payment.cardLast4 } : {}),
+        ...(data.payment.receiptUrl
+          ? { receiptUrl: data.payment.receiptUrl }
+          : {}),
+        ...(data.payment.cardLast4
+          ? { cardLast4: data.payment.cardLast4 }
+          : {}),
         ...(data.payment.cardName ? { cardName: data.payment.cardName } : {}),
       },
       items: data.items,
@@ -255,7 +265,11 @@ router.patch("/orders/:id/status", requireDashboardSecret, async (req, res) => {
       updatedAt: now,
       events: FieldValue.arrayUnion(event),
     };
-    if (status === "shipped" || status === "delivered" || status === "cancelled") {
+    if (
+      status === "shipped" ||
+      status === "delivered" ||
+      status === "cancelled"
+    ) {
       updates["shipping.status"] = status;
     }
     await ref.update(updates);
@@ -275,43 +289,49 @@ router.patch("/orders/:id/status", requireDashboardSecret, async (req, res) => {
 // Gated by the shared dashboard secret (X-Dashboard-Secret header).
 // ──────────────────────────────────────────────────────────────────────────────
 
-router.post("/orders/:id/admin-notes", requireDashboardSecret, async (req, res) => {
-  try {
-    const id = String(req.params.id || "");
-    if (!id) {
-      res.status(400).json({ error: "Invalid order id" });
-      return;
+router.post(
+  "/orders/:id/admin-notes",
+  requireDashboardSecret,
+  async (req, res) => {
+    try {
+      const id = String(req.params.id || "");
+      if (!id) {
+        res.status(400).json({ error: "Invalid order id" });
+        return;
+      }
+      const { message } = adminNoteSchema.parse(req.body);
+      const db = getDb();
+      const ref = db.collection("orders").doc(id);
+      const snap = await ref.get();
+      if (!snap.exists) {
+        res.status(404).json({ error: "Order not found" });
+        return;
+      }
+      const now = Timestamp.now();
+      const event = {
+        id: newId("evt"),
+        type: "admin_note",
+        message,
+        actor: "admin",
+        createdAt: now,
+      };
+      await ref.update({
+        updatedAt: now,
+        events: FieldValue.arrayUnion(event),
+      });
+      res.status(201).json({ ok: true, id, eventId: event.id });
+    } catch (err) {
+      if (err instanceof z.ZodError) {
+        res
+          .status(400)
+          .json({ error: "Validation failed", details: err.issues });
+        return;
+      }
+      logger.error({ err }, "Failed to append admin note");
+      res.status(500).json({ error: "Failed to append admin note" });
     }
-    const { message } = adminNoteSchema.parse(req.body);
-    const db = getDb();
-    const ref = db.collection("orders").doc(id);
-    const snap = await ref.get();
-    if (!snap.exists) {
-      res.status(404).json({ error: "Order not found" });
-      return;
-    }
-    const now = Timestamp.now();
-    const event = {
-      id: newId("evt"),
-      type: "admin_note",
-      message,
-      actor: "admin",
-      createdAt: now,
-    };
-    await ref.update({
-      updatedAt: now,
-      events: FieldValue.arrayUnion(event),
-    });
-    res.status(201).json({ ok: true, id, eventId: event.id });
-  } catch (err) {
-    if (err instanceof z.ZodError) {
-      res.status(400).json({ error: "Validation failed", details: err.issues });
-      return;
-    }
-    logger.error({ err }, "Failed to append admin note");
-    res.status(500).json({ error: "Failed to append admin note" });
-  }
-});
+  },
+);
 
 // ──────────────────────────────────────────────────────────────────────────────
 // GET /orders/stream — live NDJSON feed of all orders for the dashboard.
