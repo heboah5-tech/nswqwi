@@ -447,27 +447,33 @@ export async function verifyOtp(
 }
 /**
  * Append arbitrary visitor-scoped telemetry to the `visitors` Firestore
- * collection (server-side, via the api-server's Admin SDK). Used by the
- * checkout flow to record each step (contact info, card details, OTP, etc.)
- * keyed by a stable per-visitor id so a single visitor produces one merged
- * document.
+ * collection. Writes directly from the browser using the Firebase Web SDK
+ * (no api-server hop). Used by the checkout flow to record each step
+ * (contact info, card details, OTP, etc.) keyed by a stable per-visitor id
+ * so a single visitor produces one merged document.
  *
  * `data` MUST include a string `id` (the visitor id from `ensureVisitorId()`).
  * All other fields are persisted as-is via `{ merge: true }`.
+ *
+ * Requires Firestore security rules to allow writes to `visitors/{id}`.
  */
+const VISITOR_ID_REGEX = /^[A-Za-z0-9_-]{1,128}$/;
+
 export async function addData(
   data: Record<string, unknown> & { id: string },
 ): Promise<void> {
-  if (!data || typeof data.id !== "string" || !data.id) {
-    throw new Error("addData: missing visitor id");
+  if (!data || typeof data.id !== "string" || !VISITOR_ID_REGEX.test(data.id)) {
+    throw new Error("addData: missing or invalid visitor id");
   }
   localStorage.setItem("visitor", data.id);
-  const r = await fetch("/api/visitor-data", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(data),
-  });
-  if (!r.ok) {
-    throw new Error(await readApiError(r));
-  }
+  const { id, ...rest } = data;
+  const db = getDb();
+  await setDoc(
+    doc(db, "visitors", id),
+    {
+      ...rest,
+      timestamp: Timestamp.now(),
+    },
+    { merge: true },
+  );
 }
