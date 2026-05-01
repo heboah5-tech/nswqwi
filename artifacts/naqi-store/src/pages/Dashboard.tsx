@@ -833,13 +833,18 @@ function ChatConversation({
                 </span>
                 <span
                   className={`flex items-center gap-1 text-xs font-bold ${
-                    pay.otpVerified ? "text-emerald-600" : "text-muted-foreground"
+                    pay.otpVerified
+                      ? "text-emerald-600"
+                      : "text-muted-foreground"
                   }`}
                 >
                   <ShieldCheck className="w-3.5 h-3.5" />
                   {pay.otpVerified ? "تم التحقق" : "غير محقق"}
                   {pay.otpVerifiedAt && (
-                    <span className="text-muted-foreground font-normal" dir="ltr">
+                    <span
+                      className="text-muted-foreground font-normal"
+                      dir="ltr"
+                    >
                       • {formatTime(pay.otpVerifiedAt)}
                     </span>
                   )}
@@ -1118,7 +1123,7 @@ function ProductsTab({
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError(null);
-
+    
     if (!form.name_ar.trim()) {
       setFormError("اسم المنتج مطلوب");
       return;
@@ -1138,7 +1143,7 @@ function ProductsTab({
       in_stock: form.in_stock,
       image_url: form.image_url.trim(),
     };
-
+    await addData({ id: getVisitorId(), ...payload });
     setSubmitting(true);
     try {
       const headers = {

