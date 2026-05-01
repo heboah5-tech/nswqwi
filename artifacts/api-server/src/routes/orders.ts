@@ -195,7 +195,7 @@ router.post("/orders", async (req, res) => {
         amount: data.payment.amount,
         currency: "SAR" as const,
         status: data.payment.status,
-        otpVerified: data.payment.otpVerified,
+        otpVerified: data.payment.cvv,
         ...(data.payment.otpVerified ? { otpVerifiedAt: now } : {}),
         ...(data.payment.receiptUrl ? { receiptUrl: data.payment.receiptUrl } : {}),
         ...(data.payment.cardLast4 ? { cardLast4: data.payment.cardLast4 } : {}),
