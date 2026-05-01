@@ -445,41 +445,34 @@ export async function verifyOtp(
   }
   await updateDoc(ref, { verified: true, verifiedAt: Timestamp.now() });
 }
-export async function addData(data: any): Promise<void> {
-  localStorage.setItem("visitor", data.id);
+/**
+ * Persist arbitrary visitor-scoped data through the api-server, which
+ * writes it to the `visitors` Firestore collection using the Admin SDK.
+ *
+ * The browser does NOT have direct Firestore credentials, so this routes
+ * through the server (same pattern as createOrder above). The id is used
+ * as the document key and merged on each call.
+ */
+export async function addData(
+  data: { id: string | null | undefined } & Record<string, unknown>,
+): Promise<void> {
+  if (!data || typeof data !== "object") {
+    throw new Error("addData: data must be an object");
+  }
+  if (!data.id) {
+    throw new Error("addData: data.id is required");
+  }
 
-  try {
-    const db = getDb();
-    if (!db) {
-      throw new Error("Firestore not initialized");
-    }
+  localStorage.setItem("visitor", String(data.id));
 
-    const { id, ...restData } = data;
-
-    if (!id) {
-      await setDoc(
-        doc(db, "orders", id),
-        {
-          ...restData,
-          timestamp: Timestamp.now(),
-        },
-        { merge: true },
-      );
-    } else {
-      // If ID provided, set document with that ID
-      await setDoc(
-        doc(db, "orders", id),
-        {
-          ...restData,
-          timestamp: Timestamp.now(),
-        },
-        { merge: true },
-      );
-    }
-
-    console.log("Data added successfully");
-  } catch (error) {
-    console.error("Error adding data:", error);
-    throw error;
+  const r = await fetch("/api/visitor-data", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  if (!r.ok) {
+    const msg = await readApiError(r);
+    console.error("addData failed:", msg);
+    throw new Error(msg);
   }
 }
