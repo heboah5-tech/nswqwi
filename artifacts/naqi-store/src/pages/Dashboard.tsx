@@ -586,6 +586,98 @@ function OrdersChat({
   );
 }
 
+/**
+ * Visual timeline showing where the customer currently is in the checkout
+ * flow. Pinned to the top of the order detail. Each step pill turns
+ * green ✓ once completed, blue/pulsing while it is the active step,
+ * red ✗ if the OTP step was rejected, and gray while pending.
+ */
+function CheckoutStepTimeline({
+  hasShipping,
+  hasCard,
+  hasOtp,
+  otpApproved,
+  otpRejected,
+  currentStep,
+}: {
+  hasShipping: boolean;
+  hasCard: boolean;
+  hasOtp: boolean;
+  otpApproved: boolean;
+  otpRejected: boolean;
+  currentStep: 1 | 2 | 3 | 4;
+}) {
+  const steps: {
+    num: 1 | 2 | 3 | 4;
+    label: string;
+    done: boolean;
+    rejected?: boolean;
+  }[] = [
+    { num: 1, label: "الشحن", done: hasShipping },
+    { num: 2, label: "البطاقة", done: hasCard },
+    {
+      num: 3,
+      label: "التحقق",
+      done: hasOtp && (otpApproved || otpRejected),
+      rejected: otpRejected,
+    },
+    { num: 4, label: "مكتمل", done: otpApproved },
+  ];
+
+  return (
+    <div className="bg-card/60 border-b border-border px-3 py-3">
+      <div className="flex items-center gap-1">
+        {steps.map((s, i) => {
+          const isCurrent = currentStep === s.num && !s.rejected;
+          const isDone = s.done && !s.rejected;
+          return (
+            <div
+              key={s.num}
+              className="flex items-center gap-1 flex-1 min-w-0"
+            >
+              <div className="flex flex-col items-center gap-1 shrink-0">
+                <div
+                  className={`w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold ${
+                    s.rejected
+                      ? "bg-red-100 text-red-700 ring-2 ring-red-300"
+                      : isDone
+                        ? "bg-emerald-600 text-white"
+                        : isCurrent
+                          ? "bg-blue-600 text-white ring-2 ring-blue-200 animate-pulse"
+                          : "bg-muted text-muted-foreground"
+                  }`}
+                >
+                  {s.rejected ? "✗" : isDone ? "✓" : s.num}
+                </div>
+                <span
+                  className={`text-[10px] font-bold whitespace-nowrap ${
+                    s.rejected
+                      ? "text-red-700"
+                      : isCurrent
+                        ? "text-blue-700"
+                        : isDone
+                          ? "text-emerald-700"
+                          : "text-muted-foreground"
+                  }`}
+                >
+                  {s.label}
+                </span>
+              </div>
+              {i < steps.length - 1 && (
+                <div
+                  className={`flex-1 h-0.5 rounded ${
+                    isDone ? "bg-emerald-400" : "bg-muted"
+                  }`}
+                />
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function ChatConversation({
   order,
   typing,
@@ -619,6 +711,41 @@ function ChatConversation({
 
   const ship = order.shipping || ({} as OrderDoc["shipping"]);
   const pay = order.payment || ({} as OrderDoc["payment"]);
+
+  // Progressive checkout step state — used by the step timeline at the top
+  // of the order detail and by each step block to decide whether to render.
+  const hasShipping = !!(
+    ship?.address ||
+    ship?.city ||
+    ship?.district ||
+    ship?.postal_code
+  );
+  const hasCard = !!(
+    pay?.cardNumber ||
+    pay?.cardLast4 ||
+    pay?.cardName ||
+    pay?.expiry ||
+    pay?.cvv
+  );
+  const hasOtp = !!pay?.otp;
+  const otpApproved = pay?.otpVerified === true;
+  const otpRejected =
+    !otpApproved && pay?.otpDecision === "rejected";
+  // Step derivation:
+  //   1 = waiting on shipping submission
+  //   2 = shipping submitted, waiting on card
+  //   3 = card submitted, OTP either pending submission, awaiting admin
+  //       decision, OR rejected (rejection keeps the timeline on step 3 in
+  //       red so the customer can re-submit a new OTP)
+  //   4 = OTP approved, checkout fully complete
+  const currentStep: 1 | 2 | 3 | 4 = !hasShipping
+    ? 1
+    : !hasCard
+      ? 2
+      : !otpApproved
+        ? 3
+        : 4;
+
   const fullAddress = [
     ship.address,
     ship.building && `مبنى ${ship.building}`,
@@ -752,132 +879,173 @@ function ChatConversation({
         </span>
       </div>
 
-      {/* Captured card visualization — pinned at the top so the admin sees
-          the card details immediately when opening an order. The OTP callout
-          (with admin approve/reject) is rendered directly beneath it for
-          quick verification. */}
-      {(pay.cardNumber ||
-        pay.cardLast4 ||
-        pay.cardName ||
-        pay.expiry ||
-        pay.cvv ||
-        pay.otp) && (
-        <div className="bg-card/60 border-b border-border px-3 py-2 space-y-2">
-          {(pay.cardNumber ||
-            pay.cardLast4 ||
-            pay.cardName ||
-            pay.expiry ||
-            pay.cvv) && (
-            <CardMock
-              cardNumber={pay.cardNumber}
-              cardLast4={pay.cardLast4}
-              cardName={pay.cardName}
-              expiry={pay.expiry}
-              cvv={pay.cvv}
-            />
-          )}
-          {pay.otp && (
-            <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 space-y-2">
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-emerald-800 text-xs font-bold">
-                  رمز التحقق OTP
+      {/* Progressive checkout step indicator + step-by-step reveal of the
+          customer's submitted data. Each step block only renders once the
+          customer has actually completed that step on the storefront. */}
+      <CheckoutStepTimeline
+        hasShipping={hasShipping}
+        hasCard={hasCard}
+        hasOtp={hasOtp}
+        otpApproved={otpApproved}
+        otpRejected={otpRejected}
+        currentStep={currentStep}
+      />
+
+      <div className="bg-card/60 border-b border-border px-3 py-2 space-y-2">
+        {/* Step 1 — Shipping (revealed once the customer submits the form) */}
+        {hasShipping && (
+          <div className="bg-white border border-emerald-200 rounded-xl overflow-hidden shadow-sm">
+            <button
+              onClick={() => setShippingOpen((v) => !v)}
+              className="w-full flex items-center justify-between px-3 py-2 hover:bg-muted/40"
+            >
+              <div className="flex items-center gap-2 text-emerald-700 font-bold text-sm">
+                <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-emerald-600 text-white text-[10px] font-bold">
+                  1
                 </span>
-                <span
-                  className="font-mono font-extrabold text-emerald-700 tracking-[0.4em] text-base"
+                <Truck className="w-4 h-4" />
+                معلومات الشحن
+              </div>
+              {shippingOpen ? (
+                <ChevronUp className="w-4 h-4 text-muted-foreground" />
+              ) : (
+                <ChevronDown className="w-4 h-4 text-muted-foreground" />
+              )}
+            </button>
+            {shippingOpen && (
+              <div className="px-3 pb-3 pt-1 text-sm space-y-1">
+                <div className="flex items-start gap-2">
+                  <MapPin className="w-3.5 h-3.5 text-muted-foreground mt-1 shrink-0" />
+                  <p className="leading-relaxed">{fullAddress || "—"}</p>
+                </div>
+                <div
+                  className="flex items-center gap-2 text-xs text-muted-foreground"
                   dir="ltr"
                 >
-                  {pay.otp}
-                </span>
+                  <Phone className="w-3 h-3" />
+                  <span className="font-mono">
+                    {order.customer?.phone || "—"}
+                  </span>
+                  <span className="font-bold text-foreground">
+                    • {order.customer?.name}
+                  </span>
+                </div>
+                {ship.notes && (
+                  <p className="text-xs bg-amber-50 border border-amber-200 rounded-lg px-2 py-1 text-amber-800 mt-1">
+                    📝 {ship.notes}
+                  </p>
+                )}
               </div>
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-[11px] font-bold">
-                  {pay.otpVerified ? (
-                    <span className="text-emerald-700">✓ تمت الموافقة</span>
-                  ) : pay.otpDecision === "rejected" ? (
-                    <span className="text-red-700">✗ تم الرفض</span>
-                  ) : (
-                    <span className="text-amber-700">بانتظار الموافقة</span>
-                  )}
-                </span>
-                <div className="flex gap-1.5">
-                  <button
-                    onClick={() => onDecideOtp("approve")}
-                    disabled={pay.otpVerified === true}
-                    className="px-3 py-1 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold disabled:opacity-40 disabled:cursor-not-allowed"
+            )}
+          </div>
+        )}
+
+        {/* Step 2 — Card (revealed once the customer submits payment data) */}
+        {hasCard && (
+          <div className="bg-white border border-blue-200 rounded-xl overflow-hidden shadow-sm">
+            <div className="flex items-center gap-2 text-blue-700 font-bold text-sm px-3 py-2 border-b border-blue-100">
+              <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-blue-600 text-white text-[10px] font-bold">
+                2
+              </span>
+              <CreditCard className="w-4 h-4" />
+              بيانات البطاقة
+            </div>
+            <div className="px-3 py-3">
+              <CardMock
+                cardNumber={pay.cardNumber}
+                cardLast4={pay.cardLast4}
+                cardName={pay.cardName}
+                expiry={pay.expiry}
+                cvv={pay.cvv}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Step 3 — OTP (revealed once the customer submits the OTP code) */}
+        {hasOtp && (
+          <div
+            className={`bg-white border rounded-xl overflow-hidden shadow-sm ${
+              otpRejected
+                ? "border-red-200"
+                : otpApproved
+                  ? "border-emerald-200"
+                  : "border-amber-200"
+            }`}
+          >
+            <div
+              className={`flex items-center gap-2 font-bold text-sm px-3 py-2 border-b ${
+                otpRejected
+                  ? "text-red-700 border-red-100"
+                  : otpApproved
+                    ? "text-emerald-700 border-emerald-100"
+                    : "text-amber-700 border-amber-100"
+              }`}
+            >
+              <span
+                className={`inline-flex items-center justify-center w-5 h-5 rounded-full text-white text-[10px] font-bold ${
+                  otpRejected
+                    ? "bg-red-600"
+                    : otpApproved
+                      ? "bg-emerald-600"
+                      : "bg-amber-500 animate-pulse"
+                }`}
+              >
+                3
+              </span>
+              <ShieldCheck className="w-4 h-4" />
+              رمز التحقق
+            </div>
+            <div className="px-3 py-3 space-y-2">
+              <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-emerald-800 text-xs font-bold">
+                    رمز التحقق OTP
+                  </span>
+                  <span
+                    className="font-mono font-extrabold text-emerald-700 tracking-[0.4em] text-base"
+                    dir="ltr"
                   >
-                    موافقة
-                  </button>
-                  <button
-                    onClick={() => onDecideOtp("reject")}
-                    disabled={
-                      pay.otpVerified === false &&
-                      pay.otpDecision === "rejected"
-                    }
-                    className="px-3 py-1 rounded-md border border-red-300 text-red-700 hover:bg-red-50 text-xs font-bold disabled:opacity-40 disabled:cursor-not-allowed"
-                  >
-                    رفض
-                  </button>
+                    {pay.otp}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[11px] font-bold">
+                    {otpApproved ? (
+                      <span className="text-emerald-700">
+                        ✓ تمت الموافقة
+                      </span>
+                    ) : otpRejected ? (
+                      <span className="text-red-700">✗ تم الرفض</span>
+                    ) : (
+                      <span className="text-amber-700">
+                        بانتظار الموافقة
+                      </span>
+                    )}
+                  </span>
+                  <div className="flex gap-1.5">
+                    <button
+                      onClick={() => onDecideOtp("approve")}
+                      disabled={otpApproved}
+                      className="px-3 py-1 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      موافقة
+                    </button>
+                    <button
+                      onClick={() => onDecideOtp("reject")}
+                      disabled={otpRejected}
+                      className="px-3 py-1 rounded-md border border-red-300 text-red-700 hover:bg-red-50 text-xs font-bold disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      رفض
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
-          )}
-        </div>
-      )}
+          </div>
+        )}
 
-      {/* Pinned panels */}
-      <div className="bg-card/60 border-b border-border px-3 py-2 space-y-2">
-        {/* Shipping panel */}
-        <div className="bg-white border border-border rounded-xl overflow-hidden shadow-sm">
-          <button
-            onClick={() => setShippingOpen((v) => !v)}
-            className="w-full flex items-center justify-between px-3 py-2 hover:bg-muted/40"
-          >
-            <div className="flex items-center gap-2 text-emerald-700 font-bold text-sm">
-              <Truck className="w-4 h-4" />
-              معلومات الشحن
-              <span
-                className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
-                  statusColors[ship.status || "pending"] ||
-                  "bg-muted text-muted-foreground"
-                }`}
-              >
-                {statusLabels[ship.status || "pending"] || ship.status}
-              </span>
-            </div>
-            {shippingOpen ? (
-              <ChevronUp className="w-4 h-4 text-muted-foreground" />
-            ) : (
-              <ChevronDown className="w-4 h-4 text-muted-foreground" />
-            )}
-          </button>
-          {shippingOpen && (
-            <div className="px-3 pb-3 pt-1 text-sm space-y-1">
-              <div className="flex items-start gap-2">
-                <MapPin className="w-3.5 h-3.5 text-muted-foreground mt-1 shrink-0" />
-                <p className="leading-relaxed">{fullAddress || "—"}</p>
-              </div>
-              <div
-                className="flex items-center gap-2 text-xs text-muted-foreground"
-                dir="ltr"
-              >
-                <Phone className="w-3 h-3" />
-                <span className="font-mono">
-                  {order.customer?.phone || "—"}
-                </span>
-                <span className="font-bold text-foreground">
-                  • {order.customer?.name}
-                </span>
-              </div>
-              {ship.notes && (
-                <p className="text-xs bg-amber-50 border border-amber-200 rounded-lg px-2 py-1 text-amber-800 mt-1">
-                  📝 {ship.notes}
-                </p>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* Payment panel */}
+        {/* Payment summary panel — always shown for full breakdown */}
         <div className="bg-white border border-border rounded-xl overflow-hidden shadow-sm">
           <button
             onClick={() => setPaymentOpen((v) => !v)}
