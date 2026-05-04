@@ -152,10 +152,7 @@ export default function Dashboard() {
     // Lock the dashboard to the viewport so the body itself never scrolls.
     // The inner flex column distributes height to the active tab, which
     // owns its own internal scroll regions (sidebar + main content).
-    <div
-      dir="rtl"
-      className="h-screen overflow-hidden bg-muted/30 p-4 sm:p-6 flex flex-col"
-    >
+    <div dir="rtl" className="h-screen  bg-muted/30 p-4 sm:p-6 flex flex-col">
       <div className="max-w-7xl mx-auto w-full flex-1 flex flex-col min-h-0">
         <h1 className="text-2xl font-extrabold text-foreground mb-6 shrink-0">
           لوحة التحكم
@@ -519,7 +516,7 @@ function OrdersChat({
       {/* Two-pane chat layout — fills remaining vertical space provided
           by the parent flex column. Sidebar + main pane scroll
           internally; the body itself never scrolls. */}
-      <div className="bg-card border border-border rounded-2xl  grid grid-cols-1 md:grid-cols-[340px_1fr] flex-1 min-h-0">
+      <div className="bg-card border border-border rounded-2xl overflow-hidden grid grid-cols-1 md:grid-cols-[340px_1fr] flex-1 min-h-0">
         {/* Left: chat list. `min-h-0` is required so the inner
             `overflow-y-auto` list can shrink within this grid cell;
             without it the column inflates to fit content and never
@@ -743,10 +740,7 @@ function CheckoutStepTimeline({
           const isCurrent = currentStep === s.num && !s.rejected;
           const isDone = s.done && !s.rejected;
           return (
-            <div
-              key={s.num}
-              className="flex items-center gap-1 flex-1 min-w-0"
-            >
+            <div key={s.num} className="flex items-center gap-1 flex-1 min-w-0">
               <div className="flex flex-col items-center gap-1 shrink-0">
                 <div
                   className={`w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold ${
@@ -841,8 +835,7 @@ function ChatConversation({
   );
   const hasOtp = !!pay?.otp;
   const otpApproved = pay?.otpVerified === true;
-  const otpRejected =
-    !otpApproved && pay?.otpDecision === "rejected";
+  const otpRejected = !otpApproved && pay?.otpDecision === "rejected";
   // Step derivation:
   //   1 = waiting on shipping submission
   //   2 = shipping submitted, waiting on card
@@ -1124,15 +1117,11 @@ function ChatConversation({
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-[11px] font-bold">
                     {otpApproved ? (
-                      <span className="text-emerald-700">
-                        ✓ تمت الموافقة
-                      </span>
+                      <span className="text-emerald-700">✓ تمت الموافقة</span>
                     ) : otpRejected ? (
                       <span className="text-red-700">✗ تم الرفض</span>
                     ) : (
-                      <span className="text-amber-700">
-                        بانتظار الموافقة
-                      </span>
+                      <span className="text-amber-700">بانتظار الموافقة</span>
                     )}
                   </span>
                   <div className="flex gap-1.5">
@@ -1239,7 +1228,7 @@ function ChatConversation({
               {pay.receiptUrl && (
                 <button
                   onClick={() => onZoomReceipt(pay.receiptUrl!)}
-                  className="mt-1 block w-full rounded-lg overflow-hidden border border-border hover:opacity-90 transition-opacity"
+                  className="mt-1 block w-full rounded-lg  border border-border hover:opacity-90 transition-opacity"
                 >
                   <img
                     src={pay.receiptUrl}
@@ -1509,7 +1498,7 @@ function ProductsTab({
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError(null);
-    
+
     if (!form.name_ar.trim()) {
       setFormError("اسم المنتج مطلوب");
       return;
@@ -1581,7 +1570,7 @@ function ProductsTab({
       });
       return;
     }
-    toast({ title: "تم حذف المنتج", description: p.name_ar, duration: 2000 });
+    toast({ title: "تم حl�ف المنتج", description: p.name_ar, duration: 2000 });
     setProducts((prev) => prev.filter((x) => x.id !== p.id));
   };
 
@@ -1597,7 +1586,7 @@ function ProductsTab({
         </button>
       </div>
 
-      <div className="bg-card border border-border rounded-xl overflow-hidden">
+      <div className="bg-card border border-border rounded-xl ">
         {loading ? (
           <div className="flex items-center justify-center h-40">
             <div className="w-8 h-8 border-4 border-muted border-t-primary rounded-full animate-spin" />
