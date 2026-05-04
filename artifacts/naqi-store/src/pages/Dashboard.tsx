@@ -149,13 +149,19 @@ export default function Dashboard() {
   }, [getToken]);
 
   return (
-    <div dir="rtl" className="min-h-screen bg-muted/30 p-4 sm:p-6">
-      <div className="max-w-7xl mx-auto">
-        <h1 className="text-2xl font-extrabold text-foreground mb-6">
+    // Lock the dashboard to the viewport so the body itself never scrolls.
+    // The inner flex column distributes height to the active tab, which
+    // owns its own internal scroll regions (sidebar + main content).
+    <div
+      dir="rtl"
+      className="h-screen overflow-hidden bg-muted/30 p-4 sm:p-6 flex flex-col"
+    >
+      <div className="max-w-7xl mx-auto w-full flex-1 flex flex-col min-h-0">
+        <h1 className="text-2xl font-extrabold text-foreground mb-6 shrink-0">
           لوحة التحكم
         </h1>
 
-        <div className="flex gap-2 mb-6 border-b border-border">
+        <div className="flex gap-2 mb-6 border-b border-border shrink-0">
           {[
             { key: "orders" as const, label: "الطلبات" },
             { key: "products" as const, label: "المنتجات" },
@@ -174,11 +180,17 @@ export default function Dashboard() {
           ))}
         </div>
 
-        {tab === "orders" ? (
-          <OrdersChat authHeaders={authHeaders} />
-        ) : (
-          <ProductsTab authHeaders={authHeaders} />
-        )}
+        {/* Tab content fills remaining viewport space; each tab owns
+            its internal scroll regions. */}
+        <div className="flex-1 min-h-0 flex flex-col">
+          {tab === "orders" ? (
+            <OrdersChat authHeaders={authHeaders} />
+          ) : (
+            <div className="flex-1 min-h-0 overflow-y-auto">
+              <ProductsTab authHeaders={authHeaders} />
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -408,11 +420,10 @@ function OrdersChat({
         </div>
       )}
 
-      {/* Two-pane chat layout */}
-      <div
-        className="bg-card border border-border rounded-2xl overflow-hidden grid grid-cols-1 md:grid-cols-[340px_1fr]"
-        style={{ height: "calc(100vh - 280px)", minHeight: 540 }}
-      >
+      {/* Two-pane chat layout — fills remaining vertical space provided
+          by the parent flex column. Sidebar + main pane scroll
+          internally; the body itself never scrolls. */}
+      <div className="bg-card border border-border rounded-2xl overflow-hidden grid grid-cols-1 md:grid-cols-[340px_1fr] flex-1 min-h-0">
         {/* Left: chat list */}
         <aside
           className={`border-l border-border flex flex-col bg-card ${
