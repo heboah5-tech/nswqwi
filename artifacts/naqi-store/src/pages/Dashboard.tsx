@@ -637,11 +637,13 @@ function OrdersChat({
           </div>
         </aside>
 
-        {/* Right: chat conversation. `min-h-0 overflow-hidden` lets the
-            inner messages list (`flex-1 overflow-y-auto`) actually scroll
-            within this grid cell instead of pushing the page. */}
+        {/* Right: chat conversation. The ENTIRE panel is the scroll
+            container (`overflow-y-auto`) — header, step cards, messages
+            and input all scroll together. `min-h-0` is what allows the
+            grid cell to shrink and let the panel actually engage its own
+            scrollbar instead of growing the page. */}
         <section
-          className={`relative flex-col min-h-0 overflow-hidden ${selected ? "flex" : "hidden md:flex"}`}
+          className={`relative flex-col min-h-0 overflow-y-auto overflow-x-hidden ${selected ? "flex" : "hidden md:flex"}`}
           style={{
             backgroundColor: "#e7eef5",
             backgroundImage:
@@ -801,17 +803,22 @@ function ChatConversation({
   onDecideOtp: (decision: "approve" | "reject") => Promise<void>;
   onZoomReceipt: (url: string) => void;
 }) {
-  const scrollRef = useRef<HTMLDivElement>(null);
+  // Sentinel element rendered at the very end of the messages list. We
+  // scroll IT into view rather than scrolling a specific container, so
+  // auto-scroll-to-bottom works correctly now that the entire right
+  // panel (the `<section>`) is the scroll container — not just the
+  // messages div.
+  const endRef = useRef<HTMLDivElement>(null);
   const [note, setNote] = useState("");
   const [shippingOpen, setShippingOpen] = useState(true);
   const [paymentOpen, setPaymentOpen] = useState(true);
 
   // Auto-scroll to newest bubble whenever the events list changes
   useEffect(() => {
-    const el = scrollRef.current;
+    const el = endRef.current;
     if (!el) return;
     requestAnimationFrame(() => {
-      el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+      el.scrollIntoView({ behavior: "smooth", block: "end" });
     });
   }, [order.events?.length, typing]);
 
@@ -1245,8 +1252,11 @@ function ChatConversation({
         </div>
       </div>
 
-      {/* Messages */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-3">
+      {/* Messages — no internal overflow; the parent <section> is the
+          single scroll container so all of header/cards/messages/input
+          scroll together. `flex-1` is kept so the messages area still
+          stretches to fill space when the conversation is short. */}
+      <div className="flex-1 p-4 space-y-3">
         {/* Order intro */}
         <Bubble side="incoming" time={formatTime(order.createdAt)}>
           <div className="font-bold text-sm mb-0.5">
@@ -1362,6 +1372,8 @@ function ChatConversation({
             </span>
           </div>
         )}
+        {/* Sentinel — auto-scroll-to-bottom target. */}
+        <div ref={endRef} aria-hidden="true" />
       </div>
 
       {/* Bottom action bar */}
