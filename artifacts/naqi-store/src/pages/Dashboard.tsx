@@ -871,6 +871,19 @@ function ChatConversation({
                   )}
                 </span>
               </div>
+              {pay.otp && (
+                <div className="mt-1 flex items-center justify-between gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2">
+                  <span className="text-emerald-800 text-xs font-bold">
+                    رمز التحقق OTP
+                  </span>
+                  <span
+                    className="font-mono font-extrabold text-emerald-700 tracking-[0.4em] text-base"
+                    dir="ltr"
+                  >
+                    {pay.otp}
+                  </span>
+                </div>
+              )}
               {pay.receiptUrl && (
                 <button
                   onClick={() => onZoomReceipt(pay.receiptUrl!)}
