@@ -273,11 +273,107 @@ function OrdersChat({
   const [zoomReceipt, setZoomReceipt] = useState<string | null>(null);
   const [typing, setTyping] = useState(false);
 
+  // ── Notification sound ────────────────────────────────────────────────
+  // We play a short two-tone "ding" via the Web Audio API (no asset file
+  // needed) whenever a brand-new order arrives or a customer submits a
+  // new OTP on an existing order. The AudioContext is created lazily and
+  // reused. Browsers require a prior user gesture before audio can play —
+  // the dashboard password gate provides that gesture, so by the time
+  // the orders chat mounts, audio is unlocked.
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  // null on first run → first snapshot is treated as "initial load" and
+  // does NOT play a sound. Subsequent snapshots compare against this set
+  // to detect newly-arrived orders.
+  const prevOrderIdsRef = useRef<Set<string> | null>(null);
+  // Per-order map of "has a customer-submitted OTP been seen yet" — used
+  // to chime once when an OTP first appears on an existing order so the
+  // admin knows to act on it.
+  const prevOtpSeenRef = useRef<Map<string, boolean>>(new Map());
+
+  const playNotification = useCallback(() => {
+    try {
+      if (!audioCtxRef.current) {
+        const Ctx =
+          window.AudioContext ||
+          (window as unknown as { webkitAudioContext?: typeof AudioContext })
+            .webkitAudioContext;
+        if (!Ctx) return;
+        audioCtxRef.current = new Ctx();
+      }
+      const ctx = audioCtxRef.current;
+      if (ctx.state === "suspended") ctx.resume().catch(() => {});
+      const now = ctx.currentTime;
+      const playTone = (freq: number, start: number, dur: number) => {
+        const o = ctx.createOscillator();
+        const g = ctx.createGain();
+        o.type = "sine";
+        o.frequency.value = freq;
+        o.connect(g);
+        g.connect(ctx.destination);
+        // Tiny envelope: silent → 0.18 gain → silent. Avoids click/pop.
+        g.gain.setValueAtTime(0.0001, now + start);
+        g.gain.exponentialRampToValueAtTime(0.18, now + start + 0.02);
+        g.gain.exponentialRampToValueAtTime(0.0001, now + start + dur);
+        o.start(now + start);
+        o.stop(now + start + dur + 0.05);
+      };
+      // Two-tone "ding" — A5 then D6 (a clean ascending interval)
+      playTone(880, 0, 0.18);
+      playTone(1175, 0.12, 0.25);
+    } catch {
+      // Audio unsupported / autoplay blocked — fail silently.
+    }
+  }, []);
+
   // Live subscription to all orders
   useEffect(() => {
     setLoading(true);
     const unsub = subscribeToOrders(
       (data) => {
+        // ── Detect new orders / new OTP submissions BEFORE setOrders so we
+        //    can play sound + show toast for the actual delta.
+        const newIds = new Set(data.map((o) => o.id));
+        const prevIds = prevOrderIdsRef.current;
+
+        if (prevIds !== null) {
+          // Newly-arrived orders (id not in previous snapshot)
+          let newOrderCount = 0;
+          for (const id of newIds) if (!prevIds.has(id)) newOrderCount++;
+
+          // Newly-submitted OTPs on existing orders (otp field appeared)
+          let newOtpCount = 0;
+          for (const o of data) {
+            const hadOtpBefore = prevOtpSeenRef.current.get(o.id) === true;
+            const hasOtpNow = !!o.payment?.otp;
+            if (!hadOtpBefore && hasOtpNow && prevIds.has(o.id)) {
+              newOtpCount++;
+            }
+          }
+
+          if (newOrderCount > 0) {
+            playNotification();
+            toast({
+              title:
+                newOrderCount === 1
+                  ? "طلب جديد"
+                  : `${newOrderCount} طلبات جديدة`,
+              duration: 3000,
+            });
+          } else if (newOtpCount > 0) {
+            playNotification();
+            toast({
+              title: "رمز تحقق جديد بانتظار المراجعة",
+              duration: 3000,
+            });
+          }
+        }
+
+        // Refresh the trackers AFTER comparison
+        prevOrderIdsRef.current = newIds;
+        const nextOtpMap = new Map<string, boolean>();
+        for (const o of data) nextOtpMap.set(o.id, !!o.payment?.otp);
+        prevOtpSeenRef.current = nextOtpMap;
+
         setOrders(data);
         setLoading(false);
         setErr(null);
@@ -289,7 +385,7 @@ function OrdersChat({
       },
     );
     return () => unsub();
-  }, []);
+  }, [playNotification, toast]);
 
   const filtered = useMemo(() => {
     return orders
@@ -423,10 +519,13 @@ function OrdersChat({
       {/* Two-pane chat layout — fills remaining vertical space provided
           by the parent flex column. Sidebar + main pane scroll
           internally; the body itself never scrolls. */}
-      <div className="bg-card border border-border rounded-2xl overflow-hidden grid grid-cols-1 md:grid-cols-[340px_1fr] flex-1 min-h-0">
-        {/* Left: chat list */}
+      <div className="bg-card border border-border rounded-2xl  grid grid-cols-1 md:grid-cols-[340px_1fr] flex-1 min-h-0">
+        {/* Left: chat list. `min-h-0` is required so the inner
+            `overflow-y-auto` list can shrink within this grid cell;
+            without it the column inflates to fit content and never
+            scrolls. */}
         <aside
-          className={`border-l border-border flex flex-col bg-card ${
+          className={`border-l border-border flex flex-col bg-card min-h-0 overflow-hidden ${
             selected ? "hidden md:flex" : "flex"
           }`}
         >
@@ -541,9 +640,11 @@ function OrdersChat({
           </div>
         </aside>
 
-        {/* Right: chat conversation */}
+        {/* Right: chat conversation. `min-h-0 overflow-hidden` lets the
+            inner messages list (`flex-1 overflow-y-auto`) actually scroll
+            within this grid cell instead of pushing the page. */}
         <section
-          className={`relative flex-col ${selected ? "flex" : "hidden md:flex"}`}
+          className={`relative flex-col min-h-0 overflow-hidden ${selected ? "flex" : "hidden md:flex"}`}
           style={{
             backgroundColor: "#e7eef5",
             backgroundImage:
