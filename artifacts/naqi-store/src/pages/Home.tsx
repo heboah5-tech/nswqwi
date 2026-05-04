@@ -43,7 +43,7 @@ function HeroSection() {
     return () => clearInterval(timer);
   }, []);
   return (
-    <section className="relative w-full bg-background">
+    <section className="relative w-full bg-background overflow-hidden">
       <div className="absolute -top-32 -right-32 w-96 h-96 bg-primary/20 rounded-full blur-[100px] pointer-events-none z-0 animate-float-a" />
       <div className="absolute -bottom-32 -left-32 w-[500px] h-[500px] bg-accent/10 rounded-full blur-[120px] pointer-events-none z-0 animate-float-b" />
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.8, ease: "easeOut" }} className="relative z-10 max-w-[1920px] mx-auto">

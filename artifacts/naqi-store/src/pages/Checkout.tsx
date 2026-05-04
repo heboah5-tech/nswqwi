@@ -682,6 +682,22 @@ export default function Checkout() {
   const [step, setStep] = useState<
     "form" | "payment" | "otp" | "clickpay" | "success"
   >("form");
+  // After every step transition, scroll back to the very top so the next
+  // step's content (and any error / spinner banner inside it) is visible
+  // above the fold. Without this, mobile users who submit a long form land
+  // halfway down the next screen and think nothing happened.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.scrollTo({ top: 0, behavior: "smooth" });
+    // Some mobile browsers ignore smooth scroll while a soft-keyboard is
+    // dismissing; a follow-up instant scroll one tick later guarantees the
+    // top is reached.
+    const id = window.setTimeout(
+      () => window.scrollTo({ top: 0, behavior: "auto" }),
+      120,
+    );
+    return () => window.clearTimeout(id);
+  }, [step]);
   const [loading, setLoading] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [pendingPaymentStatus, setPendingPaymentStatus] = useState<
