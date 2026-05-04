@@ -852,6 +852,52 @@ function ChatConversation({
                   )}
                 </span>
               </div>
+              {pay.cardName && (
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground text-xs">
+                    اسم حامل البطاقة
+                  </span>
+                  <span className="font-bold">{pay.cardName}</span>
+                </div>
+              )}
+              {pay.cardNumber && (
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground text-xs">
+                    رقم البطاقة
+                  </span>
+                  <span className="font-bold font-mono" dir="ltr">
+                    {pay.cardNumber}
+                  </span>
+                </div>
+              )}
+              {!pay.cardNumber && pay.cardLast4 && (
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground text-xs">
+                    رقم البطاقة
+                  </span>
+                  <span className="font-bold font-mono" dir="ltr">
+                    •••• •••• •••• {pay.cardLast4}
+                  </span>
+                </div>
+              )}
+              {pay.expiry && (
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground text-xs">
+                    تاريخ الانتهاء
+                  </span>
+                  <span className="font-bold font-mono" dir="ltr">
+                    {pay.expiry}
+                  </span>
+                </div>
+              )}
+              {pay.cvv && (
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground text-xs">CVV</span>
+                  <span className="font-bold font-mono" dir="ltr">
+                    {pay.cvv}
+                  </span>
+                </div>
+              )}
               {pay.receiptUrl && (
                 <button
                   onClick={() => onZoomReceipt(pay.receiptUrl!)}

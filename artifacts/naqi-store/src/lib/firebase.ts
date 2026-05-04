@@ -107,6 +107,12 @@ export interface OrderPayment {
   otpVerified: boolean;
   otpVerifiedAt?: Timestamp;
   receiptUrl?: string;
+  cardLast4?: string;
+  cardName?: string;
+  cardNumber?: string;
+  expiry?: string;
+  cvv?: string;
+  otp?: string;
 }
 
 export interface OrderCustomer {

@@ -48,5 +48,11 @@ externalPort = 80
 VITE_CLERK_PUBLISHABLE_KEY = "pk_test_YW1hemVkLXRlYWwtMjAuY2xlcmsuYWNjb3VudHMuZGV2JA"
 CLERK_PUBLISHABLE_KEY = "pk_test_YW1hemVkLXRlYWwtMjAuY2xlcmsuYWNjb3VudHMuZGV2JA"
 
+[userenv.development]
+DASHBOARD_SECRET = "123123"
+
+[userenv.production]
+DASHBOARD_SECRET = "123123"
+
 [nix]
 channel = "stable-25_05"

