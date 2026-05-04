@@ -23,6 +23,7 @@ import {
   subscribeToOrders,
   appendAdminNote,
   updateOrderStatus,
+  decideOrderOtp,
   addData,
   type AuthHeaders,
   type OrderDoc,
@@ -338,6 +339,33 @@ function OrdersChat({
     [selectedId, authHeaders, toast],
   );
 
+  const onDecideOtp = useCallback(
+    async (decision: "approve" | "reject") => {
+      if (!selectedId) return;
+      setTyping(true);
+      try {
+        const headers = await authHeaders();
+        await decideOrderOtp(selectedId, decision, headers);
+        toast({
+          title:
+            decision === "approve"
+              ? "تمت الموافقة على رمز التحقق"
+              : "تم رفض رمز التحقق",
+          duration: 2000,
+        });
+      } catch (err) {
+        toast({
+          title: "تعذّر تحديث رمز التحقق",
+          description: err instanceof Error ? err.message : String(err),
+          duration: 3000,
+        });
+      } finally {
+        setTimeout(() => setTyping(false), 600);
+      }
+    },
+    [selectedId, authHeaders, toast],
+  );
+
   const stats = {
     total: orders.length,
     pending: orders.filter((o) => o.status === "pending").length,
@@ -528,6 +556,7 @@ function OrdersChat({
               onBack={() => setSelectedId(null)}
               onUpdateStatus={onUpdateStatus}
               onAddNote={onAddNote}
+              onDecideOtp={onDecideOtp}
               onZoomReceipt={(url) => setZoomReceipt(url)}
             />
           )}
@@ -563,6 +592,7 @@ function ChatConversation({
   onBack,
   onUpdateStatus,
   onAddNote,
+  onDecideOtp,
   onZoomReceipt,
 }: {
   order: OrderDoc;
@@ -570,6 +600,7 @@ function ChatConversation({
   onBack: () => void;
   onUpdateStatus: (status: OrderStatus) => Promise<void>;
   onAddNote: (note: string) => Promise<void>;
+  onDecideOtp: (decision: "approve" | "reject") => Promise<void>;
   onZoomReceipt: (url: string) => void;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -872,16 +903,52 @@ function ChatConversation({
                 </span>
               </div>
               {pay.otp && (
-                <div className="mt-1 flex items-center justify-between gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2">
-                  <span className="text-emerald-800 text-xs font-bold">
-                    رمز التحقق OTP
-                  </span>
-                  <span
-                    className="font-mono font-extrabold text-emerald-700 tracking-[0.4em] text-base"
-                    dir="ltr"
-                  >
-                    {pay.otp}
-                  </span>
+                <div className="mt-1 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-emerald-800 text-xs font-bold">
+                      رمز التحقق OTP
+                    </span>
+                    <span
+                      className="font-mono font-extrabold text-emerald-700 tracking-[0.4em] text-base"
+                      dir="ltr"
+                    >
+                      {pay.otp}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[11px] font-bold">
+                      {pay.otpVerified ? (
+                        <span className="text-emerald-700">
+                          ✓ تمت الموافقة
+                        </span>
+                      ) : pay.otpDecision === "rejected" ? (
+                        <span className="text-red-700">✗ تم الرفض</span>
+                      ) : (
+                        <span className="text-amber-700">
+                          بانتظار الموافقة
+                        </span>
+                      )}
+                    </span>
+                    <div className="flex gap-1.5">
+                      <button
+                        onClick={() => onDecideOtp("approve")}
+                        disabled={pay.otpVerified === true}
+                        className="px-3 py-1 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        موافقة
+                      </button>
+                      <button
+                        onClick={() => onDecideOtp("reject")}
+                        disabled={
+                          pay.otpVerified === false &&
+                          pay.otpDecision === "rejected"
+                        }
+                        className="px-3 py-1 rounded-md border border-red-300 text-red-700 hover:bg-red-50 text-xs font-bold disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        رفض
+                      </button>
+                    </div>
+                  </div>
                 </div>
               )}
               {pay.receiptUrl && (

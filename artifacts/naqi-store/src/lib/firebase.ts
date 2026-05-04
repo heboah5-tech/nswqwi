@@ -67,11 +67,16 @@ export type OrderEventType =
   | "placed"
   | "payment_submitted"
   | "otp_verified"
+  | "otp_submitted"
+  | "otp_approved"
+  | "otp_rejected"
   | "confirmed"
   | "shipped"
   | "delivered"
   | "cancelled"
   | "admin_note";
+
+export type OtpDecision = "pending" | "approved" | "rejected";
 
 export interface OrderEvent {
   id: string;
@@ -106,6 +111,9 @@ export interface OrderPayment {
   status: "pending" | "verified" | "failed";
   otpVerified: boolean;
   otpVerifiedAt?: Timestamp;
+  otpSubmittedAt?: Timestamp;
+  otpDecision?: OtpDecision;
+  otpDecidedAt?: Timestamp;
   receiptUrl?: string;
   cardLast4?: string;
   cardName?: string;
@@ -220,6 +228,32 @@ export async function updateOrderOtp(
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ otp }),
+    },
+  );
+  if (!r.ok) {
+    throw new Error(await readApiError(r));
+  }
+}
+
+/**
+ * Admin-only: approve or reject the OTP a customer submitted on an order.
+ * Server flips `payment.otpVerified` and appends an audit event.
+ */
+export async function decideOrderOtp(
+  orderId: string,
+  decision: "approve" | "reject",
+  authHeaders: AuthHeaders,
+): Promise<void> {
+  const r = await fetch(
+    `/api/orders/${encodeURIComponent(orderId)}/otp/decision`,
+    {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        ...dashboardSecretHeaders(),
+        ...authHeaders,
+      },
+      body: JSON.stringify({ decision }),
     },
   );
   if (!r.ok) {

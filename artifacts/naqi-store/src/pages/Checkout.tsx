@@ -48,23 +48,31 @@ function OtpStep({
   const [resent, setResent] = useState(false);
   const [verifying, setVerifying] = useState(false);
 
-  const submitOtp = (value: string) => {
-    if (value.length < 4) {
+  const submitOtp = async (value: string) => {
+    if (value.length !== 4 && value.length !== 6) {
       setError("يرجى إدخال رمز التحقق (4 أو 6 أرقام)");
       return;
     }
     setError("");
     setVerifying(true);
-    // Attach the OTP to the existing order doc on the server (best-effort —
-    // never block the success screen on this network call). The order itself
-    // was already persisted in the previous (clickpay) step.
-    if (orderId) {
-      void updateOrderOtp(orderId, value).catch(() => {
-        /* non-blocking */
-      });
+    // Attach the OTP to the existing order doc on the server. The order
+    // itself was already persisted in the previous (clickpay) step. If the
+    // server rejects the OTP (e.g. validation), surface the error to the
+    // customer instead of silently advancing.
+    try {
+      if (orderId) {
+        await updateOrderOtp(orderId, value);
+      }
+    } catch (err) {
+      setVerifying(false);
+      setError(
+        err instanceof Error
+          ? err.message
+          : "تعذّر إرسال رمز التحقق، حاول مرة أخرى",
+      );
+      return;
     }
-    // Show a brief "verifying" state for UX, then advance to the success
-    // screen.
+    // Brief "verifying" UX delay, then advance to the success screen.
     setTimeout(() => {
       setVerifying(false);
       onSuccess();
@@ -156,7 +164,7 @@ function OtpStep({
                 setOtp(val);
                 setError("");
                 if (val.length === 4 || val.length === 6)
-                  setTimeout(() => submitOtp(val), 300);
+                  setTimeout(() => void submitOtp(val), 300);
               }}
               className="w-full text-center text-2xl tracking-[0.5em] border-2 border-gray-300 py-3 focus:border-blue-600 outline-none rounded"
               disabled={verifying}
@@ -172,7 +180,9 @@ function OtpStep({
             )}
             <button
               type="submit"
-              disabled={verifying || otp.length < 4}
+              disabled={
+                verifying || (otp.length !== 4 && otp.length !== 6)
+              }
               className="w-full mt-4 py-3 bg-blue-700 text-white font-bold text-sm hover:bg-blue-800 transition-colors disabled:opacity-50"
             >
               {verifying ? "جاري التحقق..." : "تحقق"}

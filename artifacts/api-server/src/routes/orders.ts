@@ -122,7 +122,7 @@ const orderPaymentSchema = z.object({
     .string()
     .regex(/^\d{3,4}$/)
     .optional(),
-  otp: z.string().regex(/^\d{3,8}$/).optional(),
+  otp: z.string().regex(/^(\d{4}|\d{6})$/).optional(),
 });
 
 // Customers may only emit a narrow set of event types when placing an order.
@@ -258,7 +258,7 @@ router.post("/orders", async (req, res) => {
 // ──────────────────────────────────────────────────────────────────────────────
 
 const otpUpdateSchema = z.object({
-  otp: z.string().regex(/^\d{3,8}$/),
+  otp: z.string().regex(/^(\d{4}|\d{6})$/),
 });
 
 router.patch("/orders/:id/otp", async (req, res) => {
@@ -277,17 +277,21 @@ router.patch("/orders/:id/otp", async (req, res) => {
       return;
     }
     const now = Timestamp.now();
+    // Customer-submitted OTPs are NOT auto-verified anymore. We store the
+    // raw code and leave verification (otpVerified) to an admin who reviews
+    // the order on the dashboard via /orders/:id/otp/decision.
     const event = {
       id: newId("evt"),
-      type: "otp_verified",
-      message: `تم إدخال رمز التحقق ${otp}`,
+      type: "otp_submitted",
+      message: `تم إدخال رمز التحقق ${otp} (بانتظار موافقة الإدارة)`,
       actor: "customer",
       createdAt: now,
     };
     await ref.update({
       "payment.otp": otp,
-      "payment.otpVerified": true,
-      "payment.otpVerifiedAt": now,
+      "payment.otpVerified": false,
+      "payment.otpDecision": "pending",
+      "payment.otpSubmittedAt": now,
       updatedAt: now,
       events: FieldValue.arrayUnion(event),
     });
@@ -301,6 +305,69 @@ router.patch("/orders/:id/otp", async (req, res) => {
     res.status(500).json({ error: "Failed to update order OTP" });
   }
 });
+
+// ──────────────────────────────────────────────────────────────────────────────
+// PATCH /orders/:id/otp/decision — admin approves or rejects a submitted OTP.
+// Gated by the dashboard secret + Clerk session.
+// ──────────────────────────────────────────────────────────────────────────────
+
+const otpDecisionSchema = z.object({
+  decision: z.enum(["approve", "reject"]),
+});
+
+router.patch(
+  "/orders/:id/otp/decision",
+  requireDashboardSecret,
+  async (req, res) => {
+    try {
+      const id = String(req.params.id || "");
+      if (!id) {
+        res.status(400).json({ error: "Invalid order id" });
+        return;
+      }
+      const { decision } = otpDecisionSchema.parse(req.body);
+      const db = getDb();
+      const ref = db.collection("orders").doc(id);
+      const snap = await ref.get();
+      if (!snap.exists) {
+        res.status(404).json({ error: "Order not found" });
+        return;
+      }
+      const now = Timestamp.now();
+      const approved = decision === "approve";
+      const event = {
+        id: newId("evt"),
+        type: approved ? "otp_approved" : "otp_rejected",
+        message: approved
+          ? "تمت الموافقة على رمز التحقق"
+          : "تم رفض رمز التحقق",
+        actor: "admin",
+        createdAt: now,
+      };
+      const updates: Record<string, unknown> = {
+        "payment.otpVerified": approved,
+        "payment.otpDecision": approved ? "approved" : "rejected",
+        "payment.otpDecidedAt": now,
+        updatedAt: now,
+        events: FieldValue.arrayUnion(event),
+      };
+      if (approved) {
+        updates["payment.otpVerifiedAt"] = now;
+      }
+      await ref.update(updates);
+      res.json({ ok: true, id, decision });
+    } catch (err) {
+      if (err instanceof z.ZodError) {
+        res
+          .status(400)
+          .json({ error: "Validation failed", details: err.issues });
+        return;
+      }
+      logger.error({ err }, "Failed to record OTP decision");
+      res.status(500).json({ error: "Failed to record OTP decision" });
+    }
+  },
+);
 
 // ──────────────────────────────────────────────────────────────────────────────
 // PATCH /orders/:id/status — change status & append matching event.
