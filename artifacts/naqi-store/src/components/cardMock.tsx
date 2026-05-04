@@ -147,7 +147,7 @@ export function CardMock({
       </div>
       <div
         dir="ltr"
-        className="relative w-full aspect-[1.586/1] rounded-2xl shadow-lg overflow-hidden text-white p-5 flex flex-col justify-between"
+        className="relative w-full max-w-[260px] aspect-[1.586/1] rounded-xl shadow-md overflow-hidden text-white p-3 flex flex-col justify-between mx-auto"
         style={{ background: style.gradient }}
       >
         <div
@@ -159,37 +159,45 @@ export function CardMock({
         />
         <div className="relative flex items-start justify-between">
           <div
-            className="w-10 h-7 rounded-md"
+            className="w-6 h-4 rounded-sm"
             style={{
               background:
                 "linear-gradient(135deg, #d4af37 0%, #f5e7a0 50%, #b88e2f 100%)",
               boxShadow: "inset 0 0 0 1px rgba(0,0,0,0.15)",
             }}
           />
-          <div>{style.logo}</div>
+          <div className="scale-75 origin-top-right">{style.logo}</div>
         </div>
 
         <div
-          className="relative font-mono tracking-[0.18em] text-lg sm:text-xl font-semibold"
+          className="relative font-mono tracking-[0.12em] text-[11px] font-semibold"
           style={{ textShadow: "0 1px 2px rgba(0,0,0,0.25)" }}
         >
           {displayPan}
         </div>
 
-        <div className="relative flex items-end justify-between gap-3">
+        <div className="relative flex items-end justify-between gap-2">
           <div className="min-w-0">
-            <div className="text-[10px] uppercase opacity-70">Card Holder</div>
-            <div className="text-sm font-bold truncate uppercase">
+            <div className="text-[7px] uppercase opacity-70 leading-tight">
+              Card Holder
+            </div>
+            <div className="text-[10px] font-bold truncate uppercase">
               {displayName}
             </div>
           </div>
           <div>
-            <div className="text-[10px] uppercase opacity-70">Expires</div>
-            <div className="text-sm font-bold font-mono">{displayExpiry}</div>
+            <div className="text-[7px] uppercase opacity-70 leading-tight">
+              Expires
+            </div>
+            <div className="text-[10px] font-bold font-mono">
+              {displayExpiry}
+            </div>
           </div>
           <div>
-            <div className="text-[10px] uppercase opacity-70">CVV</div>
-            <div className="text-sm font-bold font-mono">{displayCvv}</div>
+            <div className="text-[7px] uppercase opacity-70 leading-tight">
+              CVV
+            </div>
+            <div className="text-[10px] font-bold font-mono">{displayCvv}</div>
           </div>
         </div>
       </div>

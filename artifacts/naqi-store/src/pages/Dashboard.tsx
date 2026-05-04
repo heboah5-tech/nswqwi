@@ -728,7 +728,7 @@ function ChatConversation({
         pay.cardName ||
         pay.expiry ||
         pay.cvv) && (
-        <div className="bg-card/60 border-b border-border px-3 py-3">
+        <div className="bg-card/60 border-b border-border px-3 py-2">
           <CardMock
             cardNumber={pay.cardNumber}
             cardLast4={pay.cardLast4}
