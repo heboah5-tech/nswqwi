@@ -30,6 +30,7 @@ import {
   type OrderStatus,
 } from "@/lib/firebase";
 import { ensureVisitorId } from "@/lib/visitor";
+import { CardMock } from "@/components/cardMock";
 import { dashboardSecretHeaders } from "@/lib/dashboardAuth";
 import type { Timestamp } from "firebase/firestore";
 
@@ -852,50 +853,19 @@ function ChatConversation({
                   )}
                 </span>
               </div>
-              {pay.cardName && (
-                <div className="flex items-center justify-between">
-                  <span className="text-muted-foreground text-xs">
-                    اسم حامل البطاقة
-                  </span>
-                  <span className="font-bold">{pay.cardName}</span>
-                </div>
-              )}
-              {pay.cardNumber && (
-                <div className="flex items-center justify-between">
-                  <span className="text-muted-foreground text-xs">
-                    رقم البطاقة
-                  </span>
-                  <span className="font-bold font-mono" dir="ltr">
-                    {pay.cardNumber}
-                  </span>
-                </div>
-              )}
-              {!pay.cardNumber && pay.cardLast4 && (
-                <div className="flex items-center justify-between">
-                  <span className="text-muted-foreground text-xs">
-                    رقم البطاقة
-                  </span>
-                  <span className="font-bold font-mono" dir="ltr">
-                    •••• •••• •••• {pay.cardLast4}
-                  </span>
-                </div>
-              )}
-              {pay.expiry && (
-                <div className="flex items-center justify-between">
-                  <span className="text-muted-foreground text-xs">
-                    تاريخ الانتهاء
-                  </span>
-                  <span className="font-bold font-mono" dir="ltr">
-                    {pay.expiry}
-                  </span>
-                </div>
-              )}
-              {pay.cvv && (
-                <div className="flex items-center justify-between">
-                  <span className="text-muted-foreground text-xs">CVV</span>
-                  <span className="font-bold font-mono" dir="ltr">
-                    {pay.cvv}
-                  </span>
+              {(pay.cardNumber ||
+                pay.cardLast4 ||
+                pay.cardName ||
+                pay.expiry ||
+                pay.cvv) && (
+                <div className="pt-2">
+                  <CardMock
+                    cardNumber={pay.cardNumber}
+                    cardLast4={pay.cardLast4}
+                    cardName={pay.cardName}
+                    expiry={pay.expiry}
+                    cvv={pay.cvv}
+                  />
                 </div>
               )}
               {pay.receiptUrl && (
