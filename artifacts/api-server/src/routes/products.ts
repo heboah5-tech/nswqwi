@@ -4,7 +4,11 @@ import { Timestamp } from "firebase-admin/firestore";
 import { getDb } from "../lib/firebase";
 import { logger } from "../lib/logger";
 import { requireDashboardSecret } from "../middlewares/dashboardSecretMiddleware";
-import { SEED_PRODUCTS, FEATURED_PRODUCTS } from "../lib/seedProducts";
+import {
+  SEED_PRODUCTS,
+  FEATURED_PRODUCTS,
+  LEGACY_FEATURED_NAMES,
+} from "../lib/seedProducts";
 
 const router: IRouter = Router();
 
@@ -80,6 +84,34 @@ async function ensureFeaturedProducts() {
   if (featuredEnsured) return;
   featuredEnsured = true;
   const db = getDb();
+
+  // First pass: clean up any stale entries inserted by an earlier
+  // deployment with the old short name_ar (e.g. "نقي 200 مل" without
+  // the "- عبوة 48 قارورة" suffix). These had placeholder pricing and
+  // would otherwise show up as duplicates next to the corrected ones.
+  for (const legacyName of LEGACY_FEATURED_NAMES) {
+    try {
+      const stale = await db
+        .collection("products")
+        .where("name_ar", "==", legacyName)
+        .get();
+      if (stale.empty) continue;
+      const batch = db.batch();
+      stale.docs.forEach((d) => batch.delete(d.ref));
+      await batch.commit();
+      logger.info(
+        { name_ar: legacyName, count: stale.size },
+        "Removed legacy featured product",
+      );
+    } catch (err) {
+      logger.error({ err, legacyName }, "Failed to remove legacy featured product");
+    }
+  }
+
+  // Second pass: insert each featured product if it isn't already
+  // present (matched by current name_ar). Skipped on subsequent calls
+  // for the lifetime of this server instance — manual deletes via the
+  // dashboard therefore stick until the next cold start.
   for (const p of FEATURED_PRODUCTS) {
     try {
       const existing = await db

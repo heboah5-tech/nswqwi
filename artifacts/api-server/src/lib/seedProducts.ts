@@ -4,32 +4,41 @@
 // if the database was seeded with an older catalog.
 export const FEATURED_PRODUCTS = [
   {
-    name_ar: "نقي 200 مل",
-    price: 22,
-    original_price: 28,
-    discount: 6,
+    name_ar: "نقي 200 مل - عبوة 48 قارورة",
+    price: 16,
+    original_price: 0,
+    discount: 0,
     category: "desalination",
     in_stock: true,
     image_url: "/products/naqi-200ml.png",
   },
   {
-    name_ar: "قطرة 200 مل",
-    price: 18,
-    original_price: 24,
-    discount: 6,
+    name_ar: "قطرة 200 مل - عبوة 40 قارورة",
+    price: 9.5,
+    original_price: 0,
+    discount: 0,
     category: "desalination",
     in_stock: true,
     image_url: "/products/qatra-200ml.png",
   },
   {
-    name_ar: "نقي 330 مل",
-    price: 30,
-    original_price: 38,
-    discount: 8,
+    name_ar: "نقي 330 مل - عبوة 40 قارورة",
+    price: 16,
+    original_price: 0,
+    discount: 0,
     category: "desalination",
     in_stock: true,
     image_url: "/products/naqi-330ml.png",
   },
+];
+
+// Old name_ar values that earlier deployments inserted with placeholder
+// prices. `ensureFeaturedProducts()` deletes these on first run so the
+// listing doesn't end up with both old and new variants of the same SKU.
+export const LEGACY_FEATURED_NAMES = [
+  "نقي 200 مل",
+  "قطرة 200 مل",
+  "نقي 330 مل",
 ];
 
 export const SEED_PRODUCTS = [
