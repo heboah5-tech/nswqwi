@@ -38,7 +38,7 @@ Customer and admin auth both handled by **Clerk** (Replit-managed).
 To make a user an admin: go to the Clerk Dashboard → Users → select user → Public Metadata → set `{"role": "admin"}`. Only required to add/edit/delete products from the dashboard's Products tab.
 
 ### Firestore Lockdown
-The browser **never reads or writes the `orders` collection directly**. The dashboard receives a live NDJSON feed from the api-server (`GET /api/orders/stream`, gated by `X-Dashboard-Secret`), which uses the Firebase Admin SDK to push a JSON-encoded snapshot of all orders on every Firestore change (plus a `\n` heartbeat every 25s). This closes the data leak that previously let anyone with the public Firebase project ID query customer phone / address fields. New orders from checkout and admin status / note changes also go through `api-server` with the Admin SDK.
+The browser **never reads or writes the `orders` collection directly**. The dashboard polls the api-server's `GET /api/orders` snapshot endpoint every 4 seconds (gated by `X-Dashboard-Secret`); the server uses the Firebase Admin SDK to read orders. A live NDJSON stream (`GET /api/orders/stream`) is also exposed for the standalone Replit deploy, but the client uses polling for portability across hosting (the Netlify Functions deploy buffers responses and cannot keep a long-lived stream open). This closes the data leak that previously let anyone with the public Firebase project ID query customer phone / address fields. New orders from checkout and admin status / note changes also go through `api-server` with the Admin SDK.
 
 `artifacts/naqi-store/firestore.rules` enforces this: **all client access to `orders` is denied** (read and write); `products` remains client-readable for forward compatibility but client writes are denied. Deploy them via the Firebase console (Build → Firestore Database → Rules) or `firebase deploy --only firestore:rules`.
 
@@ -52,7 +52,8 @@ The browser **never reads or writes the `orders` collection directly**. The dash
 - `POST /api/orders` — create order (public, used at checkout). Validates payload with Zod and writes via Firebase Admin SDK. Accepts an optional `events: [{type, message}]` array of customer-driven events (`payment_submitted`, `otp_verified`) to attach atomically alongside the auto-generated `placed` event.
 - `PATCH /api/orders/:id/status` — change status, append matching status event, sync `shipping.status` (gated by `X-Dashboard-Secret`)
 - `POST /api/orders/:id/admin-notes` — append `admin_note` event (gated by `X-Dashboard-Secret`)
-- `GET /api/orders/stream` — long-lived NDJSON stream of all orders for the dashboard (gated by `X-Dashboard-Secret`). Each line is a JSON-encoded `OrderDoc[]` snapshot pushed on every Firestore change, with a single-`\n` heartbeat every 25s.
+- `GET /api/orders` — one-shot snapshot of all orders ordered by `createdAt desc` (gated by `X-Dashboard-Secret`). Used by the dashboard's polling loop. Identical payload shape to each frame emitted by `/orders/stream`.
+- `GET /api/orders/stream` — long-lived NDJSON stream of all orders for the dashboard (gated by `X-Dashboard-Secret`). Each line is a JSON-encoded `OrderDoc[]` snapshot pushed on every Firestore change, with a single-`\n` heartbeat every 25s. Available on the standalone Replit deploy; **does not work on Netlify** (Functions buffer responses).
 - `POST /api/admin/dashboard/verify` — body `{ secret }`; returns 200 if it matches `DASHBOARD_SECRET`, 401 otherwise. Used by the dashboard password gate.
 - `POST /api/uploads/receipt` — multipart image upload (any signed-in user); stores file in Firebase Storage under `receipts/<uuid>.<ext>` and returns a public download URL.
 
@@ -121,3 +122,40 @@ Legacy orders without `shipping`/`payment` sub-objects are read-time normalized.
 - `pnpm run build` — typecheck + build all packages
 - `pnpm --filter @workspace/api-server run dev` — run API server locally
 - `pnpm --filter @workspace/naqi-store run dev` — run frontend locally
+- `pnpm --filter @workspace/api-server run build:netlify` — bundle the Express app into `netlify/functions/api.mjs` (single self-contained ESM file, ~8 MB)
+
+## Deployment — Netlify (all-in-one)
+
+The repo is configured to deploy **everything** to Netlify: the React frontend as a static site, and the Express API wrapped as a single Netlify Function via `serverless-http`.
+
+### Files
+- `netlify.toml` (root) — build command, function dir, env vars, `/api/*` → `/.netlify/functions/api/api/:splat` redirect, SPA fallback redirect.
+- `artifacts/api-server/src/serverlessHandler.ts` — wraps the Express app with `serverless-http` and exports `handler`.
+- `artifacts/api-server/build-netlify.mjs` — esbuild bundler that produces `netlify/functions/api.mjs`. Configured with `node_bundler = "none"` in `netlify.toml` so Netlify ships our pre-bundled file as-is.
+
+### Required Netlify environment variables (Site settings → Environment variables)
+Copy these from the Replit Secrets pane. Mark each as available to **Builds + Functions**.
+- `CLERK_SECRET_KEY`
+- `CLERK_PUBLISHABLE_KEY`
+- `VITE_CLERK_PUBLISHABLE_KEY` (build-time, frontend)
+- `FIREBASE_SERVICE_ACCOUNT_JSON` (full single-line JSON)
+- `FIREBASE_STORAGE_BUCKET`
+- `DASHBOARD_SECRET`
+
+`netlify.toml` also pins `NODE_VERSION=20`, `NETLIFY=true`, `NODE_ENV=production`, `PORT=8080`, and `BASE_PATH=/` for the build.
+
+### Connect & deploy
+1. Push the repo to GitHub.
+2. In Netlify: **Add new site → Import from Git** → pick the repo. Netlify detects `netlify.toml` automatically.
+3. Add the env vars above.
+4. Hit **Deploy**. The build runs `corepack enable && pnpm install && build:netlify && vite build`.
+
+### Netlify-specific downgrades (vs. the Replit deploy)
+The Express app was designed for a long-running Node server; serverless wrapping required these compromises:
+1. **No live order stream.** The dashboard now polls `GET /api/orders` every 4 seconds instead of subscribing to the NDJSON stream. New orders / OTP requests appear up to ~4s late instead of instantly.
+2. **No Clerk Frontend API proxy.** `clerkProxyMiddleware` is skipped when `process.env.NETLIFY === "true"`. Custom domains using Clerk auth need DNS CNAME setup instead of "just working".
+3. **Receipt upload limit dropped from 5 MB → 4 MB** to stay under Netlify Functions' ~6 MB request body limit (after multipart + base64 overhead).
+4. **No pino-http request logging** in functions (worker-thread transports don't run in Lambda). The base `pino` logger still works for direct `logger.info(...)` calls.
+5. **Cold starts** of ~1–2 s on the first request after the function goes idle (Firebase Admin SDK initialization).
+
+If you later want all of this back, deploy on Replit Deployments — the Express server runs as-is.
