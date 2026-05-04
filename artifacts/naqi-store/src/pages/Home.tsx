@@ -270,6 +270,32 @@ const sectionData: { title: string; subtitle?: string; items: Product[]; bg: str
   },
 ];
 
+// Flagship Naqi water cartons. Mirrored from the api-server's
+// FEATURED_PRODUCTS so the homepage stays in sync with the storefront
+// even on first paint (before the /api/products fetch resolves). Images
+// live in /public/products/ and are served from the site root since
+// BASE_PATH is "/".
+const featuredWaterBottles: Product[] = [
+  {
+    name_ar: "نقي 200 مل - عبوة 48 قارورة",
+    price: 16,
+    image_url: "/products/naqi-200ml.png",
+    in_stock: true,
+  },
+  {
+    name_ar: "قطرة 200 مل - عبوة 40 قارورة",
+    price: 9.5,
+    image_url: "/products/qatra-200ml.png",
+    in_stock: true,
+  },
+  {
+    name_ar: "نقي 330 مل - عبوة 40 قارورة",
+    price: 16,
+    image_url: "/products/naqi-330ml.png",
+    in_stock: true,
+  },
+];
+
 const certs = [
   { img: "https://media.base44.com/images/public/69f0f838e7b863b3ce41773c/51a3cba34_naqi_sa_WhatsApp-Image-2022-10-01-at-65936-PM-1-300x300_cdc6bb07.jpeg", text: "حاصل على نظام إدارة الجودة – الآيزو 9001-2015" },
   { img: "https://media.base44.com/images/public/69f0f838e7b863b3ce41773c/8cb71753a_www_naqi_sa_WhatsApp-Image-2026-01-21-at-121324-PM-300x300_c5d870be.jpeg", text: "حاصل على شهادة قياس رضا العملاء – الايزو 10004:2018" },
@@ -292,6 +318,30 @@ export default function Home() {
       <HeroSection />
       <QuickAccessSection />
       <CategoriesSection categories={categories} />
+
+      {/* Flagship water-bottle cartons — the actual Naqi product line.
+          Sits ahead of the appliance sections so visitors see the core
+          beverage products first. Three columns on tablet/desktop, two
+          on mobile, matching the rest of the page. */}
+      <AnimatedElement>
+        <section
+          className="py-10 sm:py-16 bg-gradient-to-b from-primary/5 via-background to-background relative overflow-hidden"
+          dir="rtl"
+        >
+          <div className="absolute -top-24 -left-24 w-96 h-96 bg-primary/10 rounded-full blur-[100px] pointer-events-none" />
+          <div className="max-w-7xl mx-auto px-3 sm:px-4 relative z-10">
+            <SectionHeader
+              title="مياه نقي – النقاء في كل قطرة"
+              subtitle="منتجاتنا الأصلية"
+            />
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-6">
+              {featuredWaterBottles.map((product, i) => (
+                <ProductCard key={i} product={product} index={i} />
+              ))}
+            </div>
+          </div>
+        </section>
+      </AnimatedElement>
 
       {sectionData.map((section, si) => (
         <section key={si} className={`py-10 sm:py-16 ${section.bg} relative overflow-hidden`} dir="rtl">
