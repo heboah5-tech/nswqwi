@@ -4,7 +4,7 @@ import { Timestamp } from "firebase-admin/firestore";
 import { getDb } from "../lib/firebase";
 import { logger } from "../lib/logger";
 import { requireDashboardSecret } from "../middlewares/dashboardSecretMiddleware";
-import { SEED_PRODUCTS } from "../lib/seedProducts";
+import { SEED_PRODUCTS, FEATURED_PRODUCTS } from "../lib/seedProducts";
 
 const router: IRouter = Router();
 
@@ -70,9 +70,38 @@ async function ensureSeeded() {
   await batch.commit();
 }
 
+// Upsert the flagship water-bottle products by `name_ar`. This handles the
+// case where the products collection was seeded earlier with the old
+// catalog — we still want these three featured items present, and we
+// stamp them with the current timestamp so they sort to the top of the
+// `created_date desc` listing on the storefront.
+let featuredEnsured = false;
+async function ensureFeaturedProducts() {
+  if (featuredEnsured) return;
+  featuredEnsured = true;
+  const db = getDb();
+  for (const p of FEATURED_PRODUCTS) {
+    try {
+      const existing = await db
+        .collection("products")
+        .where("name_ar", "==", p.name_ar)
+        .limit(1)
+        .get();
+      if (!existing.empty) continue;
+      await db
+        .collection("products")
+        .add({ ...p, created_date: Timestamp.now() });
+      logger.info({ name_ar: p.name_ar }, "Inserted featured product");
+    } catch (err) {
+      logger.error({ err, name_ar: p.name_ar }, "Failed to ensure featured product");
+    }
+  }
+}
+
 router.get("/products", async (_req, res) => {
   try {
     await ensureSeeded();
+    await ensureFeaturedProducts();
     const snap = await getDb()
       .collection("products")
       .orderBy("created_date", "desc")

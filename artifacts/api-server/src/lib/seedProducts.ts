@@ -1,4 +1,39 @@
+// Featured Naqi water-bottle cartons. These are the flagship products and
+// must always exist; they're also re-asserted at runtime by
+// `ensureFeaturedProducts()` in routes/products.ts so they show up even
+// if the database was seeded with an older catalog.
+export const FEATURED_PRODUCTS = [
+  {
+    name_ar: "نقي 200 مل",
+    price: 22,
+    original_price: 28,
+    discount: 6,
+    category: "desalination",
+    in_stock: true,
+    image_url: "/products/naqi-200ml.png",
+  },
+  {
+    name_ar: "قطرة 200 مل",
+    price: 18,
+    original_price: 24,
+    discount: 6,
+    category: "desalination",
+    in_stock: true,
+    image_url: "/products/qatra-200ml.png",
+  },
+  {
+    name_ar: "نقي 330 مل",
+    price: 30,
+    original_price: 38,
+    discount: 8,
+    category: "desalination",
+    in_stock: true,
+    image_url: "/products/naqi-330ml.png",
+  },
+];
+
 export const SEED_PRODUCTS = [
+  ...FEATURED_PRODUCTS,
   {
     name_ar: "صانعة آيس كريم نقي",
     price: 899,
