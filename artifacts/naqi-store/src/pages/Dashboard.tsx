@@ -18,6 +18,9 @@ import {
   ShieldCheck,
   Truck,
   Clock,
+  Menu,
+  Paperclip,
+  MoreVertical,
 } from "lucide-react";
 import {
   subscribeToOrders,
@@ -526,17 +529,40 @@ function OrdersChat({
             selected ? "hidden md:flex" : "flex"
           }`}
         >
-          <div className="p-3 border-b border-border space-y-2">
+          {/* Telegram-style sidebar header — title bar + search + filter
+              chips. The hamburger button is decorative for now (no menu
+              yet); kept so the header matches Telegram's familiar
+              skeleton and leaves room for future "settings/contacts"
+              actions. */}
+          <div className="px-3 pt-3 pb-2 flex items-center gap-2 border-b border-border/30">
+            <button
+              type="button"
+              className="p-1.5 hover:bg-muted rounded-full text-muted-foreground transition-colors"
+              aria-label="القائمة"
+            >
+              <Menu className="w-5 h-5" />
+            </button>
+            <div className="flex-1 min-w-0">
+              <div className="font-extrabold text-base text-foreground leading-tight">
+                الطلبات
+              </div>
+              <div className="text-[11px] text-muted-foreground leading-tight">
+                {orders.length}{" "}
+                {orders.length === 1 ? "محادثة" : "محادثات"}
+              </div>
+            </div>
+          </div>
+          <div className="px-3 pt-2 pb-2 space-y-2 border-b border-border/30">
             <div className="relative">
               <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="بحث في الطلبات..."
-                className="w-full bg-muted/50 border border-transparent focus:border-primary focus:bg-card rounded-full ps-3 pe-9 py-2 text-sm outline-none transition-colors"
+                placeholder="بحث"
+                className="w-full bg-muted/60 border border-transparent focus:border-primary focus:bg-card rounded-full ps-3 pe-9 py-2 text-sm outline-none transition-colors"
               />
             </div>
-            <div className="flex gap-1 overflow-x-auto pb-1">
+            <div className="flex gap-1.5 overflow-x-auto no-scrollbar pb-0.5">
               {(
                 [
                   { key: "all", label: "الكل" },
@@ -550,9 +576,9 @@ function OrdersChat({
                 <button
                   key={f.key}
                   onClick={() => setFilter(f.key)}
-                  className={`px-2.5 py-1 rounded-full text-xs font-bold whitespace-nowrap transition-all ${
+                  className={`px-3 py-1 rounded-full text-xs font-bold whitespace-nowrap transition-all ${
                     filter === f.key
-                      ? "bg-primary text-primary-foreground"
+                      ? "bg-blue-500 text-white shadow-sm"
                       : "bg-muted/60 text-muted-foreground hover:bg-muted"
                   }`}
                 >
@@ -589,41 +615,61 @@ function OrdersChat({
                         setSelectedId(o.id);
                       }
                     }}
-                    className={`w-full text-right flex items-center gap-3 px-3 py-3 border-b border-border/50 hover:bg-muted/40 transition-colors ${
-                      isActive ? "bg-primary/10" : ""
+                    className={`w-full text-right flex items-center gap-3 px-3 py-2.5 transition-colors ${
+                      isActive
+                        ? "bg-gradient-to-l from-blue-500 to-blue-600 text-white"
+                        : "hover:bg-muted/50"
                     }`}
                   >
                     <div className="relative shrink-0">
                       <div
-                        className={`w-11 h-11 rounded-full bg-gradient-to-br ${avatarColor(
+                        className={`w-12 h-12 rounded-full bg-gradient-to-br ${avatarColor(
                           o.customer?.name || "؟",
-                        )} text-white flex items-center justify-center font-bold text-sm`}
+                        )} text-white flex items-center justify-center font-bold text-base ring-2 ${
+                          isActive ? "ring-white/50" : "ring-transparent"
+                        }`}
                       >
                         {initials(o.customer?.name || "؟")}
                       </div>
                       <span
-                        className={`absolute -bottom-0.5 -left-0.5 w-3 h-3 rounded-full border-2 border-card ${
+                        className={`absolute -bottom-0.5 -left-0.5 w-3 h-3 rounded-full border-2 ${
+                          isActive ? "border-blue-600" : "border-card"
+                        } ${
                           statusDotColors[o.status] || "bg-muted-foreground"
                         }`}
                       />
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between gap-2 mb-0.5">
-                        <span className="font-bold text-foreground text-sm truncate">
+                        <span
+                          className={`font-bold text-sm truncate ${
+                            isActive ? "text-white" : "text-foreground"
+                          }`}
+                        >
                           {o.customer?.name || "—"}
                         </span>
-                        <span className="text-[10px] text-muted-foreground font-mono shrink-0">
+                        <span
+                          className={`text-[10px] font-mono shrink-0 ${
+                            isActive ? "text-white" : "text-muted-foreground"
+                          }`}
+                        >
                           {formatDay(o.createdAt)}
                         </span>
                       </div>
                       <div className="flex items-center justify-between gap-2">
-                        <span className="text-xs text-muted-foreground truncate">
+                        <span
+                          className={`text-xs truncate ${
+                            isActive ? "text-white" : "text-muted-foreground"
+                          }`}
+                        >
                           {lastPreview}
                         </span>
                         <span
                           className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full shrink-0 ${
-                            statusColors[o.status] ||
-                            "bg-muted text-muted-foreground"
+                            isActive
+                              ? "bg-white text-blue-700"
+                              : statusColors[o.status] ||
+                                "bg-muted text-muted-foreground"
                           }`}
                         >
                           {statusLabels[o.status] || o.status}
@@ -645,9 +691,13 @@ function OrdersChat({
         <section
           className={`relative flex-col min-h-0 overflow-y-auto overflow-x-hidden ${selected ? "flex" : "hidden md:flex"}`}
           style={{
-            backgroundColor: "#e7eef5",
+            // Telegram-style cool gray base with a subtle dot grid
+            // overlay — mimics Telegram desktop's signature backdrop
+            // without an external image asset.
+            backgroundColor: "#dfe6ed",
             backgroundImage:
-              "radial-gradient(circle at 25% 25%, rgba(0,123,255,0.06) 0, transparent 50%), radial-gradient(circle at 75% 75%, rgba(40,167,69,0.05) 0, transparent 50%)",
+              "radial-gradient(circle, rgba(120,140,160,0.22) 1.2px, transparent 1.5px)",
+            backgroundSize: "18px 18px",
           }}
         >
           {!selected ? (
@@ -949,7 +999,11 @@ function ChatConversation({
   return (
     <>
       {/* Sticky header */}
-      <div className="bg-card border-b border-border px-4 py-3 flex items-center gap-3 shadow-sm sticky top-0 z-10">
+      {/* Telegram-style chat header — translucent white over the
+          dotted backdrop with a subtle bottom shadow. Status pill
+          mirrors the sidebar; the trailing MoreVertical is a hook for
+          future per-order actions. */}
+      <div className="bg-white/95 backdrop-blur-sm border-b border-border px-4 py-2.5 flex items-center gap-3 shadow-sm sticky top-0 z-10">
         <button
           onClick={onBack}
           className="md:hidden p-1 hover:bg-muted rounded-full"
@@ -965,17 +1019,17 @@ function ChatConversation({
             {initials(order.customer?.name || "؟")}
           </div>
           <span
-            className={`absolute -bottom-0.5 -left-0.5 w-3 h-3 rounded-full border-2 border-card ${
+            className={`absolute -bottom-0.5 -left-0.5 w-3 h-3 rounded-full border-2 border-white ${
               statusDotColors[order.status] || "bg-muted-foreground"
             }`}
           />
         </div>
         <div className="flex-1 min-w-0">
-          <div className="font-bold text-foreground text-sm truncate">
+          <div className="font-bold text-foreground text-sm truncate leading-tight">
             {order.customer?.name || "—"}
           </div>
           <div
-            className="text-xs text-muted-foreground flex items-center gap-1.5"
+            className="text-[11px] text-muted-foreground flex items-center gap-1.5 leading-tight mt-0.5"
             dir="ltr"
           >
             <Phone className="w-3 h-3" />
@@ -989,6 +1043,13 @@ function ChatConversation({
         >
           {statusLabels[order.status] || order.status}
         </span>
+        <button
+          type="button"
+          className="p-1.5 hover:bg-muted rounded-full text-muted-foreground transition-colors hidden sm:inline-flex"
+          aria-label="المزيد"
+        >
+          <MoreVertical className="w-5 h-5" />
+        </button>
       </div>
 
       {/* Progressive checkout step indicator + step-by-step reveal of the
@@ -1391,20 +1452,33 @@ function ChatConversation({
             ))}
           </div>
         )}
+        {/* Telegram-style composer: rounded pill containing the
+            attachment clip + input, with a circular blue Send button on
+            the side. Send icon is mirrored on the X-axis so the arrow
+            points toward the outgoing-bubble side in RTL. */}
         <form onSubmit={submitNote} className="flex items-center gap-2">
-          <input
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-            placeholder="اكتب ملاحظة إدارية..."
-            className="flex-1 bg-muted/50 border border-transparent focus:border-primary focus:bg-card rounded-full px-4 py-2 text-sm outline-none transition-colors"
-          />
+          <div className="flex-1 flex items-center bg-muted/50 focus-within:bg-card border border-transparent focus-within:border-primary/40 rounded-full px-2 transition-colors">
+            <button
+              type="button"
+              className="p-1.5 text-muted-foreground hover:text-primary transition-colors shrink-0"
+              aria-label="إرفاق ملف"
+            >
+              <Paperclip className="w-4 h-4 -rotate-45" />
+            </button>
+            <input
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder="اكتب ملاحظة إدارية..."
+              className="flex-1 bg-transparent border-none px-1 py-2 text-sm outline-none min-w-0"
+            />
+          </div>
           <button
             type="submit"
             disabled={!note.trim()}
-            className="bg-primary text-primary-foreground rounded-full p-2.5 hover:bg-primary/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            className="bg-blue-500 text-white rounded-full p-2.5 hover:bg-blue-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed shadow-sm shrink-0"
             aria-label="إرسال ملاحظة"
           >
-            <Send className="w-4 h-4" />
+            <Send className="w-4 h-4 -scale-x-100" />
           </button>
         </form>
       </div>
@@ -1424,15 +1498,22 @@ function Bubble({
   accent?: boolean;
 }) {
   const isOut = side === "outgoing";
+  // Telegram-style bubble palette: outgoing = soft mint-green
+  // (#effdde — Telegram's exact outgoing tint), incoming = pure white.
+  // Each side gets a sharp corner on the side closest to its avatar so
+  // the bubble visually points back at its sender — Telegram's
+  // signature "tail corner" effect.
   const bg = isOut
-    ? "bg-[#dcf2c1]"
+    ? "bg-[#effdde]"
     : accent
       ? "bg-white border-2 border-primary/30"
       : "bg-white";
   const align = isOut ? "ms-auto rounded-bl-sm" : "me-auto rounded-br-sm";
   return (
     <div className={`max-w-[88%] sm:max-w-[78%] ${align}`}>
-      <div className={`${bg} rounded-2xl px-3 py-2 shadow-sm relative`}>
+      <div
+        className={`${bg} rounded-2xl px-3 py-2 shadow-[0_1px_1.5px_rgba(0,0,0,0.13)] relative`}
+      >
         {children}
         <div className="text-[10px] text-muted-foreground/80 font-mono text-end mt-0.5 leading-none">
           {time}{" "}
