@@ -208,7 +208,10 @@ function OtpStep({
                 const val = e.target.value.replace(/\D/g, "").slice(0, 6);
                 setOtp(val);
                 setError("");
-                if (val.length === 4 || val.length === 6)
+                // Only auto-submit at 6 digits. 4-digit OTPs require the
+                // customer to press the "تحقق" button manually so they have
+                // a chance to review what they entered.
+                if (val.length === 6)
                   setTimeout(() => void submitOtp(val), 300);
               }}
               className="w-full text-center text-2xl tracking-[0.5em] border-2 border-gray-300 py-3 focus:border-blue-600 outline-none rounded"
