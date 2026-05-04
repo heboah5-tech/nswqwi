@@ -206,6 +206,28 @@ export async function createOrder(input: CreateOrderInput): Promise<string> {
 }
 
 /**
+ * Public storefront helper — attach the OTP value the customer entered to an
+ * existing order's `payment.otp` field and mark `payment.otpVerified = true`.
+ * The order must have been created first (via createOrder).
+ */
+export async function updateOrderOtp(
+  orderId: string,
+  otp: string,
+): Promise<void> {
+  const r = await fetch(
+    `/api/orders/${encodeURIComponent(orderId)}/otp`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ otp }),
+    },
+  );
+  if (!r.ok) {
+    throw new Error(await readApiError(r));
+  }
+}
+
+/**
  * Live subscription to all orders, ordered by createdAt desc.
  *
  * Connects to the api-server's NDJSON stream (`GET /api/orders/stream`),

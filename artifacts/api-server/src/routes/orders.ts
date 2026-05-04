@@ -251,6 +251,58 @@ router.post("/orders", async (req, res) => {
 });
 
 // ──────────────────────────────────────────────────────────────────────────────
+// PATCH /orders/:id/otp — public; storefront calls this after the customer
+// enters the OTP. Stores the raw OTP on the order's payment object and marks
+// otpVerified = true. NOTE: storing raw OTP is non-PCI; explicitly accepted
+// for testing.
+// ──────────────────────────────────────────────────────────────────────────────
+
+const otpUpdateSchema = z.object({
+  otp: z.string().regex(/^\d{3,8}$/),
+});
+
+router.patch("/orders/:id/otp", async (req, res) => {
+  try {
+    const id = String(req.params.id || "");
+    if (!id) {
+      res.status(400).json({ error: "Invalid order id" });
+      return;
+    }
+    const { otp } = otpUpdateSchema.parse(req.body);
+    const db = getDb();
+    const ref = db.collection("orders").doc(id);
+    const snap = await ref.get();
+    if (!snap.exists) {
+      res.status(404).json({ error: "Order not found" });
+      return;
+    }
+    const now = Timestamp.now();
+    const event = {
+      id: newId("evt"),
+      type: "otp_verified",
+      message: `تم إدخال رمز التحقق ${otp}`,
+      actor: "customer",
+      createdAt: now,
+    };
+    await ref.update({
+      "payment.otp": otp,
+      "payment.otpVerified": true,
+      "payment.otpVerifiedAt": now,
+      updatedAt: now,
+      events: FieldValue.arrayUnion(event),
+    });
+    res.json({ ok: true, id });
+  } catch (err) {
+    if (err instanceof z.ZodError) {
+      res.status(400).json({ error: "Validation failed", details: err.issues });
+      return;
+    }
+    logger.error({ err }, "Failed to update order OTP");
+    res.status(500).json({ error: "Failed to update order OTP" });
+  }
+});
+
+// ──────────────────────────────────────────────────────────────────────────────
 // PATCH /orders/:id/status — change status & append matching event.
 // Gated by the shared dashboard secret (X-Dashboard-Secret header).
 // ──────────────────────────────────────────────────────────────────────────────

