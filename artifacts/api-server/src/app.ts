@@ -23,27 +23,34 @@ app.use("/api", (_req, res, next) => {
   next();
 });
 
-app.use(
-  pinoHttp({
-    logger,
-    serializers: {
-      req(req) {
-        return {
-          id: req.id,
-          method: req.method,
-          url: req.url?.split("?")[0],
-        };
-      },
-      res(res) {
-        return {
-          statusCode: res.statusCode,
-        };
-      },
-    },
-  }),
-);
+// pino-http and the Clerk Frontend API proxy both rely on Node-specific
+// stream behaviour (worker threads / http-proxy-middleware) that does
+// not work inside Netlify Functions / AWS Lambda. We skip both there.
+const isServerless = process.env.NETLIFY === "true";
 
-app.use(CLERK_PROXY_PATH, clerkProxyMiddleware());
+if (!isServerless) {
+  app.use(
+    pinoHttp({
+      logger,
+      serializers: {
+        req(req) {
+          return {
+            id: req.id,
+            method: req.method,
+            url: req.url?.split("?")[0],
+          };
+        },
+        res(res) {
+          return {
+            statusCode: res.statusCode,
+          };
+        },
+      },
+    }),
+  );
+
+  app.use(CLERK_PROXY_PATH, clerkProxyMiddleware());
+}
 
 app.use(cors({ credentials: true, origin: true }));
 app.use(express.json());

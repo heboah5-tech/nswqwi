@@ -9,7 +9,10 @@ const router: IRouter = Router();
 
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5 MB
+  // 4 MB — chosen to stay safely under Netlify Functions' ~6 MB request
+  // body limit after multipart + base64 transport overhead. The standalone
+  // (non-serverless) Replit deploy could safely accept larger uploads.
+  limits: { fileSize: 4 * 1024 * 1024 }, // 4 MB
   fileFilter: (_req, file, cb) => {
     if (!file.mimetype.startsWith("image/")) {
       cb(new Error("Only image uploads are allowed"));

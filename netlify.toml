@@ -1,0 +1,26 @@
+[build]
+  command = "corepack enable && pnpm install --no-frozen-lockfile && pnpm --filter @workspace/api-server run build:netlify && pnpm --filter @workspace/naqi-store run build"
+  publish = "artifacts/naqi-store/dist/public"
+  functions = "netlify/functions"
+
+[build.environment]
+  NODE_VERSION = "20"
+  PORT = "8080"
+  BASE_PATH = "/"
+  NETLIFY = "true"
+  NODE_ENV = "production"
+
+[functions]
+  node_bundler = "none"
+  included_files = ["netlify/functions/api.mjs"]
+
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/api/api/:splat"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200

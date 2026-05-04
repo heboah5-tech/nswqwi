@@ -288,126 +288,70 @@ export async function decideOrderOtp(
 /**
  * Live subscription to all orders, ordered by createdAt desc.
  *
- * Connects to the api-server's NDJSON stream (`GET /api/orders/stream`),
- * which uses the Firebase Admin SDK server-side. The browser never reads
- * Firestore directly, so the security rules can deny anonymous reads on
- * the `orders` collection (closing the leak of customer phone / address
- * data through the public Firebase project ID).
+ * Implementation: short-interval HTTP polling against the api-server's
+ * one-shot snapshot endpoint (`GET /api/orders`). We deliberately use
+ * polling instead of the NDJSON stream (`/api/orders/stream`) because
+ * Netlify Functions buffer responses and cannot keep a long-lived
+ * streaming connection open — the standalone Replit deploy can still use
+ * the streaming endpoint, but for portability we poll on both.
  *
- * Each line of the response body is one of:
- *   - `[]` / `[{...order}, ...]`  — a full snapshot of all orders.
- *   - `{"__error": "..."}`        — a server-side stream error.
- *   - `""` (heartbeat newline)    — keep-alive; ignored.
+ * The browser still never reads Firestore directly; all order reads go
+ * through the Admin SDK on the server, so the Firestore rules can deny
+ * anonymous reads on the `orders` collection.
  *
- * Reconnects automatically with exponential backoff if the connection
- * drops (network blip, server restart, proxy idle-out).
+ * Polling cadence: every 4 seconds while the tab is visible (and once
+ * immediately on subscribe). The cleanup function cancels any in-flight
+ * request and the next scheduled tick.
  */
+const ORDERS_POLL_INTERVAL_MS = 4000;
+
 export function subscribeToOrders(
   cb: (orders: OrderDoc[]) => void,
   onError?: (err: Error) => void,
 ): () => void {
   let cancelled = false;
+  let timer: ReturnType<typeof setTimeout> | null = null;
   let controller: AbortController | null = null;
-  let retryDelay = 1000;
-  let retryTimer: ReturnType<typeof setTimeout> | null = null;
 
-  const connect = async (): Promise<void> => {
+  const tick = async (): Promise<void> => {
     if (cancelled) return;
     controller = new AbortController();
-    let response: Response;
     try {
-      response = await fetch("/api/orders/stream", {
+      const r = await fetch("/api/orders", {
         method: "GET",
         headers: {
-          Accept: "application/x-ndjson",
+          Accept: "application/json",
           ...dashboardSecretHeaders(),
         },
         signal: controller.signal,
         cache: "no-store",
       });
-    } catch (err) {
-      if (cancelled || (err as { name?: string }).name === "AbortError") return;
-      onError?.(err instanceof Error ? err : new Error(String(err)));
-      scheduleReconnect();
-      return;
-    }
-
-    if (!response.ok || !response.body) {
-      const message = `HTTP ${response.status}`;
-      // 401/403 means the dashboard secret is wrong — surface it but
-      // still try to reconnect (the user can re-enter the password and
-      // the next attempt will pick up the updated localStorage value).
-      onError?.(new Error(message));
-      scheduleReconnect();
-      return;
-    }
-
-    // We have a live connection — reset backoff so the next failure
-    // starts retrying quickly.
-    retryDelay = 1000;
-
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-
-    try {
-      while (!cancelled) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        let nl: number;
-        while ((nl = buffer.indexOf("\n")) !== -1) {
-          const line = buffer.slice(0, nl);
-          buffer = buffer.slice(nl + 1);
-          const trimmed = line.trim();
-          if (!trimmed) continue; // heartbeat
-          let parsed: unknown;
-          try {
-            parsed = JSON.parse(trimmed);
-          } catch {
-            continue;
-          }
-          if (
-            parsed &&
-            typeof parsed === "object" &&
-            "__error" in (parsed as Record<string, unknown>)
-          ) {
-            const msg = String(
-              (parsed as { __error: unknown }).__error ?? "stream error",
-            );
-            onError?.(new Error(msg));
-            continue;
-          }
-          if (Array.isArray(parsed)) {
-            cb(parsed as OrderDoc[]);
-          }
-        }
+      if (!r.ok) {
+        throw new Error(`HTTP ${r.status}`);
+      }
+      const data = (await r.json()) as OrderDoc[];
+      if (!cancelled && Array.isArray(data)) {
+        cb(data);
       }
     } catch (err) {
-      if (cancelled || (err as { name?: string }).name === "AbortError") return;
+      if (cancelled || (err as { name?: string }).name === "AbortError") {
+        return;
+      }
       onError?.(err instanceof Error ? err : new Error(String(err)));
+    } finally {
+      if (!cancelled) {
+        timer = setTimeout(tick, ORDERS_POLL_INTERVAL_MS);
+      }
     }
-
-    if (!cancelled) scheduleReconnect();
   };
 
-  const scheduleReconnect = () => {
-    if (cancelled) return;
-    if (retryTimer) clearTimeout(retryTimer);
-    retryTimer = setTimeout(() => {
-      retryTimer = null;
-      void connect();
-    }, retryDelay);
-    retryDelay = Math.min(retryDelay * 2, 30_000);
-  };
-
-  void connect();
+  void tick();
 
   return () => {
     cancelled = true;
-    if (retryTimer) {
-      clearTimeout(retryTimer);
-      retryTimer = null;
+    if (timer) {
+      clearTimeout(timer);
+      timer = null;
     }
     if (controller) {
       try {

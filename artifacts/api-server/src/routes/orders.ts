@@ -514,6 +514,33 @@ router.post(
 // through proxies that idle-out long-lived HTTP responses.
 // ──────────────────────────────────────────────────────────────────────────────
 
+// ──────────────────────────────────────────────────────────────────────────────
+// GET /orders — one-shot snapshot of all orders, ordered by createdAt desc.
+// Used by the dashboard's polling fallback when the live NDJSON stream is
+// unavailable (e.g. Netlify Functions deployment, which buffers responses
+// and so cannot keep a long-lived stream open). Identical payload shape to
+// each snapshot frame emitted by /orders/stream.
+// ──────────────────────────────────────────────────────────────────────────────
+router.get("/orders", requireDashboardSecret, async (_req, res) => {
+  try {
+    const db = getDb();
+    const snap = await db
+      .collection("orders")
+      .orderBy("createdAt", "desc")
+      .get();
+    const orders = snap.docs.map((d) =>
+      serializeForStream({ ...d.data(), id: d.id }),
+    );
+    res.json(orders);
+  } catch (err) {
+    logger.error({ err }, "Failed to list orders snapshot");
+    res.status(500).json({
+      error:
+        err instanceof Error ? err.message : "Failed to list orders snapshot",
+    });
+  }
+});
+
 router.get("/orders/stream", requireDashboardSecret, (req, res) => {
   res.setHeader("Content-Type", "application/x-ndjson; charset=utf-8");
   res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
