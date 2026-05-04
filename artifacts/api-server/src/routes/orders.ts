@@ -307,6 +307,38 @@ router.patch("/orders/:id/otp", async (req, res) => {
 });
 
 // ──────────────────────────────────────────────────────────────────────────────
+// GET /orders/:id/otp-status — public; storefront polls this after the
+// customer submits an OTP, waiting for the admin's approve/reject decision.
+// Intentionally returns ONLY the OTP decision fields (no PII, no card data).
+// ──────────────────────────────────────────────────────────────────────────────
+
+router.get("/orders/:id/otp-status", async (req, res) => {
+  try {
+    const id = String(req.params.id || "");
+    if (!id) {
+      res.status(400).json({ error: "Invalid order id" });
+      return;
+    }
+    const db = getDb();
+    const snap = await db.collection("orders").doc(id).get();
+    if (!snap.exists) {
+      res.status(404).json({ error: "Order not found" });
+      return;
+    }
+    const data = snap.data() as { payment?: Record<string, unknown> };
+    const payment = data.payment ?? {};
+    res.json({
+      otpVerified: Boolean(payment.otpVerified),
+      otpDecision:
+        (payment.otpDecision as string | undefined) ?? "pending",
+    });
+  } catch (err) {
+    logger.error({ err }, "Failed to read OTP status");
+    res.status(500).json({ error: "Failed to read OTP status" });
+  }
+});
+
+// ──────────────────────────────────────────────────────────────────────────────
 // PATCH /orders/:id/otp/decision — admin approves or rejects a submitted OTP.
 // Gated by the dashboard secret + Clerk session.
 // ──────────────────────────────────────────────────────────────────────────────

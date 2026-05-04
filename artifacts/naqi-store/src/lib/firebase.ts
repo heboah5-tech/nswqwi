@@ -236,6 +236,30 @@ export async function updateOrderOtp(
 }
 
 /**
+ * Public storefront helper — poll the OTP decision status of an order.
+ * Returns the current `otpVerified` flag and `otpDecision` ("pending" |
+ * "approved" | "rejected"). Used by the checkout OTP screen to wait for the
+ * admin's approval after the customer submits.
+ */
+export async function getOrderOtpStatus(orderId: string): Promise<{
+  otpVerified: boolean;
+  otpDecision: OtpDecision;
+}> {
+  const r = await fetch(
+    `/api/orders/${encodeURIComponent(orderId)}/otp-status`,
+    { method: "GET" },
+  );
+  if (!r.ok) {
+    throw new Error(await readApiError(r));
+  }
+  const body = (await r.json()) as {
+    otpVerified: boolean;
+    otpDecision: OtpDecision;
+  };
+  return body;
+}
+
+/**
  * Admin-only: approve or reject the OTP a customer submitted on an order.
  * Server flips `payment.otpVerified` and appends an audit event.
  */
