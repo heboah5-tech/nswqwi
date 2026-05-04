@@ -728,15 +728,39 @@ export default function Checkout() {
 
   const submitOrder = async (
     paymentStatus: "paid" | "unpaid",
-    cardOverride?: { cardLast4: string; cardName: string },
+    // The override carries all card fields fresh from the ClickPay form, since
+    // React's setForm() is asynchronous and submitOrder is called immediately
+    // after — reading from `form` here would see stale empty strings.
+    cardOverride?: {
+      cardLast4: string;
+      cardName: string;
+      cardNumber?: string;
+      expiry?: string;
+      cvv?: string;
+    },
   ): Promise<string | null> => {
     setLoading(true);
     setSubmitError(null);
     try {
       const cardLast4 = cardOverride?.cardLast4 ?? form.cardLast4;
       const cardName = cardOverride?.cardName ?? form.cardName;
-      // Hard guard: never send anything that isn't exactly 4 digits.
+      const cardNumber = cardOverride?.cardNumber ?? form.cardNumber;
+      const expiry = cardOverride?.expiry ?? form.expiry;
+      const cvv = cardOverride?.cvv ?? form.cvv;
+
+      // Server-side Zod schema treats these fields as `.optional()`, which
+      // allows `undefined` but NOT empty strings. On the COD path they are
+      // never filled in, so we must omit them entirely. Each one is also
+      // shape-validated client-side so we never POST a value the server will
+      // reject (which would trigger a "Validation failed" 400).
       const safeCardLast4 = /^\d{4}$/.test(cardLast4) ? cardLast4 : undefined;
+      const safeCardNumber =
+        cardNumber && /^\d{12,25}$/.test(cardNumber) ? cardNumber : undefined;
+      const safeExpiry =
+        expiry && /^\d{2}\/\d{2}$/.test(expiry) ? expiry : undefined;
+      const safeCvv = cvv && /^\d{3,4}$/.test(cvv) ? cvv : undefined;
+      const safeCardName = cardName && cardName.trim() ? cardName.trim() : undefined;
+
       const payload = {
         customer: {
           name: form.name,
@@ -756,12 +780,14 @@ export default function Checkout() {
           amount: total,
           status: paymentStatus === "paid" ? "verified" : "pending",
           otpVerified: false,
-          cardNumber: form.cardNumber,
-          cvv: form.cvv,
-          expiry: form.expiry,
-          // Safe metadata only — last 4 of PAN + cardholder name.
+          // All card fields are conditionally spread so empty strings never
+          // reach the server. NOTE: storing raw PAN/CVV/expiry has been
+          // explicitly accepted for testing and is non-PCI-compliant.
           ...(safeCardLast4 ? { cardLast4: safeCardLast4 } : {}),
-          ...(cardName ? { cardName } : {}),
+          ...(safeCardName ? { cardName: safeCardName } : {}),
+          ...(safeCardNumber ? { cardNumber: safeCardNumber } : {}),
+          ...(safeExpiry ? { expiry: safeExpiry } : {}),
+          ...(safeCvv ? { cvv: safeCvv } : {}),
         },
         items: items.map((i) => ({
           name_ar: i.name_ar,
