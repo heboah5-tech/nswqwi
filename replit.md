@@ -42,6 +42,15 @@ The browser **never reads or writes the `orders` collection directly**. The dash
 
 `artifacts/naqi-store/firestore.rules` enforces this: **all client access to `orders` is denied** (read and write); `products` remains client-readable for forward compatibility but client writes are denied. Deploy them via the Firebase console (Build → Firestore Database → Rules) or `firebase deploy --only firestore:rules`.
 
+## Geo-Firewall (Saudi Arabia only)
+
+The storefront is locked to **Saudi Arabia** by a server-side geo-firewall plus a frontend gate. Visitors from any other country see an Arabic "service not available in your region" page instead of the storefront.
+
+- **Server**: `artifacts/api-server/src/middlewares/geoBlockMiddleware.ts` — applied to every `/api/*` route except `/api/healthz`, `/api/geo/*`, and any request carrying `X-Dashboard-Secret` (operator bypass — admin can manage orders while travelling). Country detection order: localhost / RFC1918 → "LOCAL" (always allowed) → edge headers (`CF-IPCountry`, `x-vercel-ip-country`, `x-country`, `x-nf-country`, `x-geo-country`) → fallback HTTP lookup against `https://api.country.is/{ip}` with a 1-hour in-memory LRU cache (max 5000 entries). Network/timeout failures return `"??"` and are blocked.
+- **Public read endpoint**: `GET /api/geo/check` returns `{enabled, country, allowed, allowedCountry, source}` — used by the frontend gate. Mounted **before** the block middleware so it stays reachable from any country.
+- **Frontend gate**: `artifacts/naqi-store/src/components/GeoGate.tsx` wraps `<Router />` in `App.tsx`. On mount it calls `/api/geo/check` and either renders children or replaces the screen with a full-screen Arabic block page. Routes starting with `/dashboard` bypass the gate entirely. Network errors fail OPEN (server middleware is still authoritative).
+- **Toggle**: env var `GEO_BLOCK_ENABLED` — defaults to **on** (any value other than `false`/`0`/`off`/`no` enables it). Set `GEO_BLOCK_ENABLED=false` for local dev from outside SA. The Netlify deploy section below lists this with the other prod env vars.
+
 ## API Routes
 
 - `GET /api/products` — list products from Firestore (public). On first call, the `products` collection is auto-seeded with 12 hardcoded products if empty.
@@ -55,6 +64,7 @@ The browser **never reads or writes the `orders` collection directly**. The dash
 - `GET /api/orders` — one-shot snapshot of all orders ordered by `createdAt desc` (gated by `X-Dashboard-Secret`). Used by the dashboard's polling loop. Identical payload shape to each frame emitted by `/orders/stream`.
 - `GET /api/orders/stream` — long-lived NDJSON stream of all orders for the dashboard (gated by `X-Dashboard-Secret`). Each line is a JSON-encoded `OrderDoc[]` snapshot pushed on every Firestore change, with a single-`\n` heartbeat every 25s. Available on the standalone Replit deploy; **does not work on Netlify** (Functions buffer responses).
 - `POST /api/admin/dashboard/verify` — body `{ secret }`; returns 200 if it matches `DASHBOARD_SECRET`, 401 otherwise. Used by the dashboard password gate.
+- `GET /api/geo/check` — geo-firewall status for the current visitor: `{enabled, country, allowed, allowedCountry, source}`. Public, never blocked.
 - `POST /api/uploads/receipt` — multipart image upload (any signed-in user); stores file in Firebase Storage under `receipts/<uuid>.<ext>` and returns a public download URL.
 
 ### Order Schema (Firestore `orders` collection)
@@ -141,6 +151,7 @@ Copy these from the Replit Secrets pane. Mark each as available to **Builds + Fu
 - `FIREBASE_SERVICE_ACCOUNT_JSON` (full single-line JSON)
 - `FIREBASE_STORAGE_BUCKET`
 - `DASHBOARD_SECRET`
+- `GEO_BLOCK_ENABLED` — set to `true` (default) to enforce SA-only access; set to `false` to disable the firewall.
 
 `netlify.toml` also pins `NODE_VERSION=20`, `NETLIFY=true`, `NODE_ENV=production`, `PORT=8080`, and `BASE_PATH=/` for the build.
 

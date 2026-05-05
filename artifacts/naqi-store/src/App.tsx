@@ -11,6 +11,7 @@ import Products from "@/pages/Products";
 import Checkout from "@/pages/Checkout";
 import Dashboard from "@/pages/Dashboard";
 import DashboardPasswordGate from "@/components/DashboardPasswordGate";
+import GeoGate from "@/components/GeoGate";
 import PageNotFound from "@/lib/PageNotFound";
 import { CartProvider } from "@/context/CartContext";
 import { addData } from "@/lib/firebase";
@@ -215,7 +216,12 @@ function ClerkProviderWithRoutes() {
       <QueryClientProvider client={queryClient}>
         <CartProvider>
           <ClerkQueryClientCacheInvalidator />
-          <Router />
+          {/* Geo-firewall: locks the storefront to Saudi Arabia. The
+              gate itself bypasses /dashboard so the operator can keep
+              managing orders from anywhere. */}
+          <GeoGate>
+            <Router />
+          </GeoGate>
           <Toaster />
         </CartProvider>
       </QueryClientProvider>
